@@ -22,8 +22,8 @@ void SerialController::update(){
     {
         SPI.transfer(_digit[_activeDigit]);
         SPI.transfer(_displayBuffer[_activeDigit]);
-        toggleLatch();
         delay(1);
+        toggleLatch();
 
         _activeDigit = (_activeDigit + 1);
         if(_activeDigit >= 4){
