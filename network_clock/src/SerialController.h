@@ -7,15 +7,18 @@
 class SerialController
 {
 public:
-    SerialController(int latchPin, int dataPin, int clockPin);
+    SerialController(int latchPin, int dataPin, int clockPin, int d1, int d2, int d3, int d4);
     void writeBuffer(uint8_t data, uint8_t digit);
     void update();
 
 private:
-    static int _latchPin;
-    static int _dataPin;
-    static int _clockPin;
-    uint8_t _displayBuffer[4];
+    void toggleLatch();
+    void activateDigit(uint8_t digit);
+    int _latchPin;
+    int _dataPin;
+    int _clockPin;
+    uint8_t _displayBuffer[4] = {};
+    int _digits[4] = {};
     uint8_t _activeDigit = 0;
 };
 

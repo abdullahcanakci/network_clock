@@ -1,13 +1,15 @@
 #include <Arduino.h>
 #include <SPI.h>
+#include <SerialController.h>
+
 
 // create a global shift register object
 // parameters: (number of shift registers, data pin, clock pin, latch pin)
 int dataPin = 13, clockPin = 14, latchPin = 15;
-uint8_t LED_Pin = D3; 
+int d1 = 5, d2 = 4, d3 = 2, d4 = 16;
 
 
-
+SerialController sc(latchPin, dataPin, clockPin, d1,d2,d3,d4);
  
 // Num table
 uint8_t numTable[] = {
@@ -24,34 +26,15 @@ uint8_t numTable[] = {
 };
 
 void setup() {
-  // put your setup code here, to run once:
     Serial.begin(9600);
-    pinMode(LED_Pin, OUTPUT);   // Initialize the LED pin as an output
-    //pinMode(dataPin, OUTPUT);
-    //pinMode(clockPin, OUTPUT);
-    SPI.begin();
-    SPI.beginTransaction(SPISettings(14000000, LSBFIRST, SPI_MODE0));
-    pinMode(latchPin, OUTPUT);
+    sc.writeBuffer(numTable[2], 0);
+    sc.writeBuffer(numTable[4], 1);
+    sc.writeBuffer(numTable[6], 2);
+    sc.writeBuffer(numTable[8], 3);
 
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-  //SPI.beginTransaction(SPISettings(14000000, LSBFIRST, SPI_MODE0));
-  int i;
-  for(i = 0; i< 10; i = i+1){
-    //shiftOut(dataPin, clockPin, MSBFIRST, numTable[i]);
- 
-    SPI.transfer(numTable[i]);
-    Serial.print(""+ i);
-    digitalWrite(latchPin, HIGH);
-    digitalWrite(latchPin, LOW); 
-
-
-    delay(250);
-  }
-  digitalWrite(LED_Pin, LOW); // Turn the LED on
-  delay(1000);                // Wait for a second
-  digitalWrite(LED_Pin, HIGH);// Turn the LED off
-  delay(1000);                // Wait for a second
+  sc.update();
 }
+
