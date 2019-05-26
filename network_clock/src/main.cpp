@@ -6,10 +6,9 @@
 // create a global shift register object
 // parameters: (number of shift registers, data pin, clock pin, latch pin)
 int dataPin = 13, clockPin = 14, latchPin = 15;
-int d1 = 5, d2 = 4, d3 = 2, d4 = 16;
 
 
-SerialController sc(latchPin, dataPin, clockPin, d1,d2,d3,d4);
+SerialController sc(latchPin, dataPin, clockPin);
  
 // Num table
 uint8_t numTable[] = {
