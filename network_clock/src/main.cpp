@@ -99,14 +99,8 @@ void setup() {
   udp.begin(localPort);
   Serial.print("Local port: ");
   Serial.print(udp.localPort());
-
-  sc.writeBuffer(numTable[2], 0);
-  sc.writeBuffer(numTable[4], 0);
-  sc.writeBuffer(numTable[6], 0);
-  sc.writeBuffer(numTable[8], 0);
   delay(1000);
   updateClock();
-
 }
 
 void updateDisplay(){
@@ -141,9 +135,7 @@ void updateClock() {
   sc.writeBuffer(numTable[8], 0);
   sc.update();
   sc.update();
-  networkKeeper.attach(0.5, getClock);
-  //getClock();
-  //Clear buffer so it stays empty while connecting
+  networkKeeper.attach(0.6, getClock);
 
 }
 

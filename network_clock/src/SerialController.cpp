@@ -27,9 +27,9 @@ void SerialController::update(){
 
     SPI.transfer(_digit[_activeDigit]);
     uint8_t temp =_displayBuffer[_activeDigit];
-    /*if((_activeDigit == 1 || _activeDigit == 2) && _dot){
+    if((_activeDigit == 1 || _activeDigit == 2) && _dot){
         temp = temp | B00000001;
-    }*/
+    }
     SPI.transfer(temp);
     
     _activeDigit = (_activeDigit + 1) % 4;
