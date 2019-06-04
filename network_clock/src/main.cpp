@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <SerialController.h>
+#include <SerialDriver.h>
 #include <Ticker.h>
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
@@ -9,8 +9,6 @@
 
 void sendNTPpacket(IPAddress& address);
 void updateDisplayBuffer();
-void updateDisplayDot();
-void updateDisplay();
 void updateClock();
 void activateTickerInts();
 void deactivateTickerInts();
@@ -45,7 +43,7 @@ WiFiUDP udp;
 
 // ------------ OBJECTS ------------
 
-SerialController sc(latchPin, dataPin, clockPin);
+SerialDriver sc(dataPin, clockPin, latchPin);
 RTC_Millis milliClock;
 
 
@@ -53,27 +51,25 @@ RTC_Millis milliClock;
 
 Ticker timeKeeper;
 Ticker networkKeeper;
-Ticker dotKeeper;
-Ticker displayKeeper;
 
 // ------------ VARIABLES ------------
-
+//NETWORK
 boolean packetSent = false;
 int gmtOffset = 3;
 int timeToTry = 10; //Times to read UDP packet before sending another one
- 
+
 // ------------ NUM REF TABLE ---------------
 uint8_t numTable[] = {
-  B11111100,
-  B01100000,
-  B11011010,
-  B11110010,
-  B01100110,
-  B10110110,
-  B00111110,
-  B11100000,
-  B11111110,
-  B11110110,
+  B01111110,
+  B00110000,
+  B01101101,
+  B01111001,
+  B00110011,
+  B01011011,
+  B00011111,
+  B01110000,
+  B01111111,
+  B01111011,
 };
 
 
@@ -83,8 +79,17 @@ void setup() {
   Serial.println();
   Serial.println();
 
+  /*
+  * We are using compile/upload? time to init the RTC
+  * So I don't have to determine whether or not the RTC needs to be 
+  * init or adjust on clock acquire.
+  */
   milliClock.begin(DateTime(F(__DATE__), F(__TIME__)));
 
+  //Setup the MAX7219 for operation
+  sc.DisplaySetup();
+
+  //Network connection
   Serial.print("Connecting to:");
   Serial.println(ssid);
   WiFi.mode(WIFI_STA);
@@ -95,33 +100,38 @@ void setup() {
   }
   Serial.println("");
 
+  //Starting an UDP port for NTP connections.
   Serial.println("Starting UDP");
   udp.begin(localPort);
   Serial.print("Local port: ");
-  Serial.print(udp.localPort());
-  delay(1000);
-  updateClock();
+  Serial.println(udp.localPort());
+
+  updateDisplayBuffer();
+  //Get Network Clock
+  //updateClock();
+  activateTickerInts();
 }
 
-void updateDisplay(){
-  sc.update();
-}
-
-void updateDisplayDot(){
-  sc.toggleDot();
-}
-
+// Fills display buffer with soft rtc values
 void updateDisplayBuffer(){
-  int dig0 = 0, dig1 = 0, dig2 = 0, dig3 = 0;
+  int dig0, dig1, dig2, dig3;
   DateTime now = milliClock.now();
   dig0 = now.hour() / 10;
   dig1 = now.hour() % 10;
   dig2 = now.minute() / 10;
   dig3 = now.minute() % 10;
-  sc.writeBuffer(numTable[dig0],0);
-  sc.writeBuffer(numTable[dig1],1);
-  sc.writeBuffer(numTable[dig2],2);
-  sc.writeBuffer(numTable[dig3],3);
+  sc.WriteDigit(numTable[dig0], 0x01);
+  sc.WriteDigit(numTable[dig1], 0x02);
+  sc.WriteDigit(numTable[dig2], 0x03);
+  sc.WriteDigit(numTable[dig3], 0x04);
+
+  Serial.print("Update Display:  ");
+  Serial.print(dig0,DEC);
+  Serial.print(dig1,DEC);
+  Serial.print(dig2,DEC);
+  Serial.println(dig3,DEC);
+  Serial.println(numTable[dig3], BIN);
+        
 }
 
 void loop() {
@@ -129,33 +139,22 @@ void loop() {
 void updateClock() {
   //deactivate Interrupts so the WiFi can work on it's own.
   deactivateTickerInts();
-  sc.writeBuffer(numTable[2], 0);
-  sc.writeBuffer(numTable[4], 0);
-  sc.writeBuffer(numTable[6], 0);
-  sc.writeBuffer(numTable[8], 0);
-  sc.update();
-  sc.update();
-  networkKeeper.attach(0.6, getClock);
+  networkKeeper.attach(0.5, getClock);
 
 }
 
 void activateTickerInts(){
   //Timer to update display buffer
   timeKeeper.attach(5, updateDisplayBuffer);
-
-  //Timer to update display seconds dot.
-  dotKeeper.attach(1, updateDisplayDot);
-
-  //Timer to update display scan
-  displayKeeper.attach_ms(4, updateDisplay);
 }
 
+//As I know wifi creates problems when there are interrupts shorter than 2ms
+// We are disabling all short term interrupts so they won't bother network stack
 void deactivateTickerInts(){
   timeKeeper.detach();
-  dotKeeper.detach();
-  displayKeeper.detach();
 }
 
+//Gets clock from network source and provides soft rtc with the results.
 void getClock(){
   //Get random ip from pool
   WiFi.hostByName(ntpServerName, timeServerIP);
@@ -209,6 +208,7 @@ void getClock(){
 
 }
 
+//Parse unix epoch time to soft rtc and logs it out
 void parseClock(unsigned long epoch){
   DateTime time = DateTime(epoch);
   time = time + TimeSpan(0, gmtOffset, 0,0);
