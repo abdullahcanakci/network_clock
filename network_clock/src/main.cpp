@@ -9,9 +9,11 @@
 
 void sendNTPpacket(IPAddress& address);
 void updateDisplayBuffer();
+void updateDisplay();
 void updateClock();
 void activateTickerInts();
 void deactivateTickerInts();
+void getNetworkConnection();
 void getClock();
 void parseClock(unsigned long epoch);
 void getUDPPacket();
@@ -49,14 +51,22 @@ RTC_Millis milliClock;
 
 // ------------ TIMERS -------------
 
-Ticker timeKeeper;
-Ticker networkKeeper;
+Ticker displayBufferUpdateTimer;
+Ticker displayUpdateTimer;
+Ticker networkRequestTimer;
+Ticker updateTimeTimer;
+//Clock refresh rate in hours
+uint8_t clockRefreshRate = 6;
+uint8_t clockKeeper = 6;
 
 // ------------ VARIABLES ------------
 //NETWORK
 boolean packetSent = false;
 int gmtOffset = 3;
 int timeToTry = 10; //Times to read UDP packet before sending another one
+
+uint8_t displayBuffer[4] = {B01001110, B00011101, B00010101, B00010101};
+boolean dotStatus = false;
 
 // ------------ NUM REF TABLE ---------------
 uint8_t numTable[] = {
@@ -88,8 +98,26 @@ void setup() {
 
   //Setup the MAX7219 for operation
   sc.DisplaySetup();
+  // This method updates displayDriver registers with the buffer ones.
+  // Default buffer contains "Conn". So on boot we can see the display activated.
+  updateDisplay();
 
-  //Network connection
+  //Connect to a network
+  getNetworkConnection();
+ 
+  //Get Network Clock
+  updateClock();
+  updateTimeTimer.attach(60*60, updateClock);
+}
+
+// Actions are based on Ticker interrupts. No need for loop()
+void loop() {}
+
+/*
+* Connects to a network and creates a port for connections.
+*/
+
+void getNetworkConnection(){
   Serial.print("Connecting to:");
   Serial.println(ssid);
   WiFi.mode(WIFI_STA);
@@ -105,53 +133,57 @@ void setup() {
   udp.begin(localPort);
   Serial.print("Local port: ");
   Serial.println(udp.localPort());
-
-  updateDisplayBuffer();
-  //Get Network Clock
-  //updateClock();
-  activateTickerInts();
 }
 
-// Fills display buffer with soft rtc values
+/*
+ *  Updates display buffer with new time values
+ */
 void updateDisplayBuffer(){
-  int dig0, dig1, dig2, dig3;
   DateTime now = milliClock.now();
-  dig0 = now.hour() / 10;
-  dig1 = now.hour() % 10;
-  dig2 = now.minute() / 10;
-  dig3 = now.minute() % 10;
-  sc.WriteDigit(numTable[dig0], 0x01);
-  sc.WriteDigit(numTable[dig1], 0x02);
-  sc.WriteDigit(numTable[dig2], 0x03);
-  sc.WriteDigit(numTable[dig3], 0x04);
-
-  Serial.print("Update Display:  ");
-  Serial.print(dig0,DEC);
-  Serial.print(dig1,DEC);
-  Serial.print(dig2,DEC);
-  Serial.println(dig3,DEC);
-  Serial.println(numTable[dig3], BIN);
-        
+  displayBuffer[0] = numTable[now.hour() / 10];
+  displayBuffer[1] = numTable[now.hour() % 10];
+  displayBuffer[2] = numTable[now.minute() / 10];
+  displayBuffer[3] = numTable[now.minute() % 10];
 }
 
-void loop() {
+/*
+* Passes display buffer values into the drivers registers.
+*/
+void updateDisplay(){
+  for(int i = 0; i < 4; i++){
+    if((i == 1 || i == 2) && dotStatus){
+      sc.WriteDigit(displayBuffer[i] | B10000000, i);
+    } else {
+      sc.WriteDigit(displayBuffer[i], i);
+    }
+  }
+  dotStatus = ~dotStatus;
 }
+
+// This methods will be called intervals to get clock from network and update local one.
 void updateClock() {
+  if(clockKeeper < clockRefreshRate){
+    return;
+  }
+  clockKeeper = 0;
+
   //deactivate Interrupts so the WiFi can work on it's own.
   deactivateTickerInts();
-  networkKeeper.attach(0.5, getClock);
-
+  networkRequestTimer.attach(0.5, getClock);
 }
 
 void activateTickerInts(){
   //Timer to update display buffer
-  timeKeeper.attach(5, updateDisplayBuffer);
+  displayBufferUpdateTimer.attach(5, updateDisplayBuffer);
+
+  displayUpdateTimer.attach(1, updateDisplay);
 }
 
 //As I know wifi creates problems when there are interrupts shorter than 2ms
 // We are disabling all short term interrupts so they won't bother network stack
 void deactivateTickerInts(){
-  timeKeeper.detach();
+  displayBufferUpdateTimer.detach();
+  displayUpdateTimer.detach();
 }
 
 //Gets clock from network source and provides soft rtc with the results.
@@ -176,7 +208,7 @@ void getClock(){
     }
   } else {
     
-    networkKeeper.detach();
+    networkRequestTimer.detach();
     timeToTry = 10;
     packetSent=false;
     Serial.print("Packet received, length=");

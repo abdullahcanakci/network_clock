@@ -27,7 +27,7 @@ void SerialDriver::SetDisplays(){
 }
 
 void SerialDriver::WriteDigit(uint8_t data, uint8_t digit){
-    SerialSend(digit, data);
+    SerialSend(digit+1, data);
 }
 
 void SerialDriver::SerialSend(uint8_t regAddress, uint8_t data){
