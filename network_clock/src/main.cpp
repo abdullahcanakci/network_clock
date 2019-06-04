@@ -66,7 +66,7 @@ int gmtOffset = 3;
 int timeToTry = 10; //Times to read UDP packet before sending another one
 
 uint8_t displayBuffer[4] = {B01001110, B00011101, B00010101, B00010101};
-boolean dotStatus = false;
+boolean dotStatus = true;
 
 // ------------ NUM REF TABLE ---------------
 uint8_t numTable[] = {
@@ -113,6 +113,20 @@ void setup() {
 // Actions are based on Ticker interrupts. No need for loop()
 void loop() {}
 
+void activateTickerInts(){
+  //Timer to update display buffer
+  displayBufferUpdateTimer.attach(5, updateDisplayBuffer);
+
+  displayUpdateTimer.attach(1, updateDisplay);
+}
+
+//As I know wifi creates problems when there are interrupts shorter than 2ms
+// We are disabling all short term interrupts so they won't bother network stack
+void deactivateTickerInts(){
+  displayBufferUpdateTimer.detach();
+  displayUpdateTimer.detach();
+}
+
 /*
 * Connects to a network and creates a port for connections.
 */
@@ -151,13 +165,15 @@ void updateDisplayBuffer(){
 */
 void updateDisplay(){
   for(int i = 0; i < 4; i++){
-    if((i == 1 || i == 2) && dotStatus){
-      sc.WriteDigit(displayBuffer[i] | B10000000, i);
+    if((i == 1 || i == 2) && dotStatus ){
+    
+        sc.WriteDigit(displayBuffer[i] | B10000000, i);
+      
     } else {
       sc.WriteDigit(displayBuffer[i], i);
     }
   }
-  dotStatus = ~dotStatus;
+  dotStatus = !dotStatus;
 }
 
 // This methods will be called intervals to get clock from network and update local one.
@@ -170,20 +186,6 @@ void updateClock() {
   //deactivate Interrupts so the WiFi can work on it's own.
   deactivateTickerInts();
   networkRequestTimer.attach(0.5, getClock);
-}
-
-void activateTickerInts(){
-  //Timer to update display buffer
-  displayBufferUpdateTimer.attach(5, updateDisplayBuffer);
-
-  displayUpdateTimer.attach(1, updateDisplay);
-}
-
-//As I know wifi creates problems when there are interrupts shorter than 2ms
-// We are disabling all short term interrupts so they won't bother network stack
-void deactivateTickerInts(){
-  displayBufferUpdateTimer.detach();
-  displayUpdateTimer.detach();
 }
 
 //Gets clock from network source and provides soft rtc with the results.
