@@ -3,7 +3,7 @@
 #include <Ticker.h>
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
-#include <RTCLib.h>
+#include <RTClib.h>
 
 // ------------ PROTOTYPES ------------
 
@@ -13,6 +13,10 @@ void updateDisplay();
 void updateClock();
 void activateTickerInts();
 void deactivateTickerInts();
+//Turns out doing long works on interrupts wasn't a bright idea.
+void setDisplayBufferFlag();
+void setDisplayUpdateFlag();
+void setUpdateClockFlag();
 void getNetworkConnection();
 void getClock();
 void parseClock(unsigned long epoch);
@@ -68,6 +72,12 @@ int timeToTry = 10; //Times to read UDP packet before sending another one
 uint8_t displayBuffer[4] = {B01001110, B00011101, B00010101, B00010101};
 boolean dotStatus = true;
 
+// ------------ FLAGS -----------
+boolean flagDisplayBufferUpdate;
+boolean flagDisplayUpdate;
+boolean flagNetworkRequest;
+boolean flagClockUpdate;
+
 // ------------ NUM REF TABLE ---------------
 uint8_t numTable[] = {
   B01111110,
@@ -107,20 +117,50 @@ void setup() {
  
   //Get Network Clock
   updateClock();
-  updateTimeTimer.attach(60*60, updateClock);
+  updateTimeTimer.attach(60*60, setUpdateClockFlag);
 }
 
 // Actions are based on Ticker interrupts. No need for loop()
-void loop() {}
+void loop() {
+  if(flagDisplayBufferUpdate){
+    flagDisplayBufferUpdate = false;
+    updateDisplayBuffer();
+  }
+  if(flagDisplayUpdate){
+    flagDisplayUpdate = false;
+    updateDisplay();
+  }
+  if(flagNetworkRequest){
+    flagNetworkRequest = false;
+    getClock();
+  }
+  if(flagClockUpdate){
+    flagClockUpdate = false;
+    updateClock();
+  }
+}
+
+void setDisplayBufferFlag(){
+  flagDisplayBufferUpdate = true;
+}
+void setDisplayUpdateFlag(){
+  flagDisplayUpdate = true;
+}
+void setUpdateClockFlag(){
+  flagClockUpdate = true;
+}
+void setNetworkRequestFlag(){
+  flagNetworkRequest = true;
+}
 
 void activateTickerInts(){
   //Timer to update display buffer
-  displayBufferUpdateTimer.attach(5, updateDisplayBuffer);
+  displayBufferUpdateTimer.attach(5, setDisplayBufferFlag);
 
-  displayUpdateTimer.attach(1, updateDisplay);
+  displayUpdateTimer.attach(1, setDisplayUpdateFlag);
 }
 
-//As I know wifi creates problems when there are interrupts shorter than 2ms
+//As I know wifi creaupdates problems when there are interrupts shorter than 2ms
 // We are disabling all short term interrupts so they won't bother network stack
 void deactivateTickerInts(){
   displayBufferUpdateTimer.detach();
@@ -185,7 +225,7 @@ void updateClock() {
 
   //deactivate Interrupts so the WiFi can work on it's own.
   deactivateTickerInts();
-  networkRequestTimer.attach(0.5, getClock);
+  networkRequestTimer.attach(0.5, setNetworkRequestFlag);
 }
 
 //Gets clock from network source and provides soft rtc with the results.
@@ -236,7 +276,7 @@ void getClock(){
     Serial.println(epoch);
 
     parseClock(epoch);
-    updateDisplayBuffer();
+    setDisplayBufferFlag();
     activateTickerInts();
   }
 
