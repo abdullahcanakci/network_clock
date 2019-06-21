@@ -4,6 +4,7 @@
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
 #include <RTClib.h>
+#include "Debouncer.h"
 
 // ------------ PROTOTYPES ------------
 
@@ -51,6 +52,7 @@ WiFiUDP udp;
 
 SerialDriver sc(dataPin, clockPin, latchPin);
 RTC_Millis milliClock;
+Debouncer button1(4);
 
 
 // ------------ TIMERS -------------
