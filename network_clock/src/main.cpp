@@ -26,6 +26,8 @@ void getUDPPacket();
 // create a global shift register object
 // parameters: (number of shift registers, data pin, clock pin, latch pin)
 int dataPin = 13, clockPin = 14, latchPin = 15;
+int WPSButtonPin = 4;
+int refreshButtonPin = 5;
 
 #ifndef STASSID
 #define STASSID "Ithilien"
@@ -52,7 +54,7 @@ WiFiUDP udp;
 
 SerialDriver sc(dataPin, clockPin, latchPin);
 RTC_Millis milliClock;
-Debouncer button1(4);
+
 
 
 // ------------ TIMERS -------------
@@ -67,18 +69,21 @@ uint8_t clockKeeper = 6;
 
 // ------------ VARIABLES ------------
 //NETWORK
-boolean packetSent = false;
+bool packetSent = false;
 int gmtOffset = 3;
 int timeToTry = 10; //Times to read UDP packet before sending another one
 
 uint8_t displayBuffer[4] = {B01001110, B00011101, B00010101, B00010101};
-boolean dotStatus = true;
+bool dotStatus = true;
 
 // ------------ FLAGS -----------
-boolean flagDisplayBufferUpdate;
-boolean flagDisplayUpdate;
-boolean flagNetworkRequest;
-boolean flagClockUpdate;
+bool flagDisplayBufferUpdate;
+bool flagDisplayUpdate;
+bool flagNetworkRequest;
+bool flagClockUpdate;
+bool flagWpsConnect;
+bool flagClockRefresh;
+
 
 // ------------ NUM REF TABLE ---------------
 uint8_t numTable[] = {
@@ -116,13 +121,13 @@ void setup() {
 
   //Connect to a network
   getNetworkConnection();
- 
+
   //Get Network Clock
   updateClock();
   updateTimeTimer.attach(60*60, setUpdateClockFlag);
 }
 
-// Actions are based on Ticker interrupts. No need for loop()
+
 void loop() {
   if(flagDisplayBufferUpdate){
     flagDisplayBufferUpdate = false;
