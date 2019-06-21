@@ -4,7 +4,7 @@
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
 #include <RTClib.h>
-#include "Debouncer.h"
+#include <Bounce2.h>
 
 // ------------ PROTOTYPES ------------
 
@@ -18,6 +18,9 @@ void deactivateTickerInts();
 void setDisplayBufferFlag();
 void setDisplayUpdateFlag();
 void setUpdateClockFlag();
+void setButtonReadFlag();
+void setWPSFlag();
+void setClockRefreshFlag();
 void getNetworkConnection();
 void getClock();
 void parseClock(unsigned long epoch);
@@ -54,6 +57,8 @@ WiFiUDP udp;
 
 SerialDriver sc(dataPin, clockPin, latchPin);
 RTC_Millis milliClock;
+Bounce wpsButton = Bounce();
+Bounce refreshButton = Bounce();
 
 
 
@@ -63,6 +68,7 @@ Ticker displayBufferUpdateTimer;
 Ticker displayUpdateTimer;
 Ticker networkRequestTimer;
 Ticker updateTimeTimer;
+Ticker buttonUpdateTimer;
 //Clock refresh rate in hours
 uint8_t clockRefreshRate = 6;
 uint8_t clockKeeper = 6;
@@ -83,6 +89,7 @@ bool flagNetworkRequest;
 bool flagClockUpdate;
 bool flagWpsConnect;
 bool flagClockRefresh;
+bool flagButtonRead;
 
 
 // ------------ NUM REF TABLE ---------------
@@ -112,6 +119,11 @@ void setup() {
   * init or adjust on clock acquire.
   */
   milliClock.begin(DateTime(F(__DATE__), F(__TIME__)));
+
+  wpsButton.attach(WPSButtonPin, INPUT_PULLUP);
+  wpsButton.interval(5);
+  refreshButton.attach(refreshButtonPin, INPUT_PULLUP);
+  refreshButton.interval(5);
 
   //Setup the MAX7219 for operation
   sc.DisplaySetup();
@@ -145,6 +157,28 @@ void loop() {
     flagClockUpdate = false;
     updateClock();
   }
+  if(flagButtonRead){
+    wpsButton.update();
+    refreshButton.update();
+    if(wpsButton.rose()){
+      flagWpsConnect = true;
+    }
+    if(refreshButton.rose()){
+      flagClockRefresh = true;
+    }
+  }
+
+  if(flagClockRefresh){
+    Serial.println("Clock refresh");
+    flagClockRefresh = false;
+    clockKeeper = clockRefreshRate;
+    flagClockUpdate = true;
+  }
+
+  if(flagWpsConnect){
+    Serial.println("Wps connect");
+    flagWpsConnect = false;
+  }
 }
 
 void setDisplayBufferFlag(){
@@ -156,8 +190,20 @@ void setDisplayUpdateFlag(){
 void setUpdateClockFlag(){
   flagClockUpdate = true;
 }
-void setNetworkRequestFlag(){
-  flagNetworkRequest = true;
+void setNetworkRequestFlag(){ 
+  flagNetworkRequest = true; 
+}
+
+void setButtonReadFlag() {
+  flagButtonRead = true;
+}
+
+void setWPSFlag(){ 
+  flagWpsConnect = true; 
+}
+
+void setClockRefreshFlag(){ 
+  flagClockRefresh = true; 
 }
 
 void activateTickerInts(){
@@ -165,6 +211,8 @@ void activateTickerInts(){
   displayBufferUpdateTimer.attach(5, setDisplayBufferFlag);
 
   displayUpdateTimer.attach(1, setDisplayUpdateFlag);
+
+  buttonUpdateTimer.attach_ms(5, setButtonReadFlag);
 }
 
 //As I know wifi creaupdates problems when there are interrupts shorter than 2ms
@@ -172,6 +220,7 @@ void activateTickerInts(){
 void deactivateTickerInts(){
   displayBufferUpdateTimer.detach();
   displayUpdateTimer.detach();
+  buttonUpdateTimer.detach();
 }
 
 /*
