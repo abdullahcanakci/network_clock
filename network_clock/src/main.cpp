@@ -5,43 +5,59 @@
 #include <WiFiUdp.h>
 #include <RTClib.h>
 #include <Bounce2.h>
+#include <user_interface.h>
+#include <EEPROM.h>
 
 // ------------ PROTOTYPES ------------
-
+// -------- NETWORK
+void getNetworkConnection();
 void sendNTPpacket(IPAddress& address);
+void getUDPPacket();
+void getWPSConnection();
+void storeNetworkInfo(struct network_info *ni);
+bool getNetworkInfo(struct network_info *ni);
+
+// -------- DISPLAY
 void updateDisplayBuffer();
 void updateDisplay();
+
+// -------- CLOCK
+void getClock();
+void parseClock(unsigned long epoch);
 void updateClock();
+// -------- INTERRUPTS
 void activateTickerInts();
 void deactivateTickerInts();
-//Turns out doing long works on interrupts wasn't a bright idea.
+
+// -------- FLAGS
 void setDisplayBufferFlag();
 void setDisplayUpdateFlag();
 void setUpdateClockFlag();
 void setButtonReadFlag();
 void setWPSFlag();
 void setClockRefreshFlag();
-void getNetworkConnection();
-void getClock();
-void parseClock(unsigned long epoch);
-void getUDPPacket();
 
-// create a global shift register object
-// parameters: (number of shift registers, data pin, clock pin, latch pin)
-int dataPin = 13, clockPin = 14, latchPin = 15;
-int WPSButtonPin = 4;
-int refreshButtonPin = 5;
-
+/* 
 #ifndef STASSID
 #define STASSID "Ithilien"
 #define STAPSK "147596328"
 #endif
+*/ //FUTURE  PROOFING
 
+#define SSID_ADDRESS 0 //32 byte 0-31
+#define PASSWORD_ADDRESS 32 // 64 bit  32-95
+#define SSID_SIZE 32
+#define PASSWORD_SIZE 64
+
+#define DATA_PIN 13
+#define CLOCK_PIN 14
+#define LATCH_PIN 15
+
+#define WPS_BUTTON_PIN 4
+#define REFRESH_BUTTON_PIN 5
 
 
 // ------------ NETWORK ---------------
-const char * ssid = STASSID;
-const char * pass = STAPSK;
 
 unsigned int localPort = 2390;
 
@@ -55,7 +71,7 @@ WiFiUDP udp;
 
 // ------------ OBJECTS ------------
 
-SerialDriver sc(dataPin, clockPin, latchPin);
+SerialDriver sc(DATA_PIN, CLOCK_PIN, LATCH_PIN);
 RTC_Millis milliClock;
 Bounce wpsButton = Bounce();
 Bounce refreshButton = Bounce();
@@ -72,6 +88,14 @@ Ticker buttonUpdateTimer;
 //Clock refresh rate in hours
 uint8_t clockRefreshRate = 6;
 uint8_t clockKeeper = 6;
+
+// ------------ STRUCTS --------------
+
+struct network_info {
+    char ssid[32];
+    char password[64];
+};
+
 
 // ------------ VARIABLES ------------
 //NETWORK
@@ -113,6 +137,13 @@ void setup() {
   Serial.println();
   Serial.println();
 
+  /* EEPROM.begin(512);
+  for(int i = 0; i < 512; i++){
+    EEPROM.write(i, 0);
+  }
+  EEPROM.end();*/
+
+
   /*
   * We are using compile/upload? time to init the RTC
   * So I don't have to determine whether or not the RTC needs to be 
@@ -120,9 +151,9 @@ void setup() {
   */
   milliClock.begin(DateTime(F(__DATE__), F(__TIME__)));
 
-  wpsButton.attach(WPSButtonPin, INPUT_PULLUP);
+  wpsButton.attach(WPS_BUTTON_PIN, INPUT_PULLUP);
   wpsButton.interval(5);
-  refreshButton.attach(refreshButtonPin, INPUT_PULLUP);
+  refreshButton.attach(REFRESH_BUTTON_PIN, INPUT_PULLUP);
   refreshButton.interval(5);
 
   //Setup the MAX7219 for operation
@@ -177,6 +208,9 @@ void loop() {
 
   if(flagWpsConnect){
     Serial.println("Wps connect");
+    getWPSConnection();
+    clockKeeper = clockRefreshRate+1;
+    setUpdateClockFlag();
     flagWpsConnect = false;
   }
 }
@@ -184,12 +218,15 @@ void loop() {
 void setDisplayBufferFlag(){
   flagDisplayBufferUpdate = true;
 }
+
 void setDisplayUpdateFlag(){
   flagDisplayUpdate = true;
 }
+
 void setUpdateClockFlag(){
   flagClockUpdate = true;
 }
+
 void setNetworkRequestFlag(){ 
   flagNetworkRequest = true; 
 }
@@ -224,20 +261,123 @@ void deactivateTickerInts(){
 }
 
 /*
+ * Reads Network info from EEPROM if no network info is present returns false
+ */
+bool getNetworkInfo(struct network_info *ni){
+  EEPROM.begin(512);
+  char ssid[SSID_SIZE];
+  char pass[PASSWORD_SIZE];
+
+  int index = 0;
+  //This counter used for tracking number of zeroes in SSID or PASSWORD
+  //If they are equal to SSID or PASSWORD size we can assume the we didn't write anything EEPROM
+  //For this to work reliably we have to prefill our EEPROM with zeroes. Otherwise trash data will break this.
+
+  uint8_t counter = 0;
+  for(int address = SSID_ADDRESS; address < SSID_ADDRESS + SSID_SIZE; address++){
+    ssid[index] = EEPROM.read(address);
+    if(ssid[index] == 0){
+      counter ++;
+    }
+    index++;
+  }
+  if (counter == 32){
+    EEPROM.end();
+    return false;
+  }
+
+  index = 0;
+  counter = 0;
+  for(int address = PASSWORD_ADDRESS; address < PASSWORD_ADDRESS + PASSWORD_SIZE - 1 ; address++){
+    pass[index] = EEPROM.read(address);
+    if(pass[index] == 0){
+      counter++;
+    }
+    index++;
+  }
+  if(counter == 64){
+    EEPROM.end();
+    return false;
+  }
+
+  EEPROM.end();
+
+
+  memcpy(ni->ssid, ssid, sizeof(ssid));
+  memcpy(ni->password, pass, sizeof(pass));
+  return true;
+}
+
+/*
+ * Store provided network info to the EEPROM.
+ */
+void storeNetworkInfo(struct network_info *ni){
+  EEPROM.begin(512);
+  int index = 0;
+  for(int address = SSID_ADDRESS; address < SSID_ADDRESS + SSID_SIZE; address++){
+    EEPROM.write(address, ni->ssid[index]);
+    index++;
+  }
+  index = 0;
+  for(int address = PASSWORD_ADDRESS; address < PASSWORD_ADDRESS + PASSWORD_SIZE - 1 ; address++){
+    EEPROM.write(address, ni->password[index]);
+    index++;
+  }
+  EEPROM.commit();
+  EEPROM.end();
+}
+
+void getWPSConnection(){
+    Serial.print("Waiting WPS connection");
+    WiFi.beginWPSConfig();
+    while(WiFi.status() != WL_CONNECTED){
+      delay(500);
+      Serial.print(".");
+    }
+
+    Serial.println("");
+    Serial.println("WPS connected");
+
+    struct station_config conf;
+    wifi_station_get_config(&conf);
+
+    struct network_info ni;
+    // Save network info to EEPROM
+    memcpy(ni.ssid, conf.ssid, sizeof(conf.ssid));
+    memcpy(ni.password, conf.password, sizeof(conf.password));
+
+    storeNetworkInfo(&ni);
+}
+
+/*
 * Connects to a network and creates a port for connections.
 */
 
 void getNetworkConnection(){
-  Serial.print("Connecting to:");
-  Serial.println(ssid);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, pass);
-  while(WiFi.status() != WL_CONNECTED){
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("");
 
+  struct network_info ni;
+  bool niStored = getNetworkInfo(&ni);
+
+  WiFi.mode(WIFI_STA);
+
+  if(niStored){
+    //There is a network conn avaible in EEPROM
+    Serial.print("Connecting to ");
+    Serial.println(ni.ssid);
+    Serial.println(ni.password);
+    WiFi.begin(ni.ssid, ni.password);
+    while(WiFi.status() != WL_CONNECTED){
+      delay(500);
+      Serial.print(".");
+    }
+  } else {
+    //There is no preconfigured network.
+    getWPSConnection();
+  }
+
+  Serial.println("");
+  Serial.println("Connection established");
+  
   //Starting an UDP port for NTP connections.
   Serial.println("Starting UDP");
   udp.begin(localPort);
@@ -281,7 +421,7 @@ void updateClock() {
 
   //deactivate Interrupts so the WiFi can work on it's own.
   deactivateTickerInts();
-  networkRequestTimer.attach(0.5, setNetworkRequestFlag);
+  networkRequestTimer.attach(0.1, setNetworkRequestFlag);
 }
 
 //Gets clock from network source and provides soft rtc with the results.
