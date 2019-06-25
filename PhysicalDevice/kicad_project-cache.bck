@@ -1,0 +1,13 @@
+EESchema-DOCLIB  Version 2.0
+#
+$CMP E6-1100CUR
+D One digit 7 segment red, common cathode
+K display LED 7-segment
+$ENDCMP
+#
+$CMP E6-1100CUR1
+D One digit 7 segment high efficiency red, common cathode
+K display LED 7-segment
+$ENDCMP
+#
+#End Doc Library
