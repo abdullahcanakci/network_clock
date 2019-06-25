@@ -74,7 +74,7 @@ By the end of the project it will be somewhat different but the roadmap is set w
 #### Prototype
 
 First prototype has been designed and send for fabrication. This doesn't have external components like buttons and leds to inform but a programming interface so constant development can be done on the device.
-Schematic and the PCB can be found on [here](https://easyeda.com/abdullahcanakci/networkclock)
+Schematic and the PCB can be found on inside Phsical device folder.
 
 
 
