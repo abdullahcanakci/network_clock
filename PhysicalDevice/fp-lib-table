@@ -1,0 +1,3 @@
+(fp_lib_table
+  (lib (name PhysicalDevice)(type KiCad)(uri ${KIPRJMOD}/PhysicalDevice.pretty)(options "")(descr ""))
+)
