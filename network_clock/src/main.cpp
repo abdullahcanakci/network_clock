@@ -57,7 +57,7 @@ void setClockRefreshFlag();
 #define REFRESH_BUTTON_PIN 5
 #define OFFSET_BUTTON_PIN 16
 
-#define WPS_LED 0 //D3
+#define WPS_LED 16 //D3
 #define CONN_LED 2 //D4
 
 
