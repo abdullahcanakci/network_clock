@@ -55,6 +55,10 @@ void setClockRefreshFlag();
 
 #define WPS_BUTTON_PIN 4
 #define REFRESH_BUTTON_PIN 5
+#define OFFSET_BUTTON_PIN 16
+
+#define WPS_LED 0 //D3
+#define CONN_LED 2 //D4
 
 
 // ------------ NETWORK ---------------
@@ -75,6 +79,7 @@ SerialDriver sc(DATA_PIN, CLOCK_PIN, LATCH_PIN);
 RTC_Millis milliClock;
 Bounce wpsButton = Bounce();
 Bounce refreshButton = Bounce();
+Bounce offsetButton = Bounce();
 
 
 
@@ -114,6 +119,7 @@ bool flagClockUpdate;
 bool flagWpsConnect;
 bool flagClockRefresh;
 bool flagButtonRead;
+bool flagClockOffset;
 
 
 // ------------ NUM REF TABLE ---------------
@@ -133,10 +139,14 @@ uint8_t numTable[] = {
 
 void setup() {
   Serial.begin(115200);
+  delay(500);
 
   Serial.println();
   Serial.println();
 
+  //CLEAR EEPROM
+  // There is no such a thing as EEPROM on ESP12E.
+  // But we are using part of a SPI flash as EEPROM.
   /* EEPROM.begin(512);
   for(int i = 0; i < 512; i++){
     EEPROM.write(i, 0);
@@ -155,6 +165,14 @@ void setup() {
   wpsButton.interval(5);
   refreshButton.attach(REFRESH_BUTTON_PIN, INPUT_PULLUP);
   refreshButton.interval(5);
+  offsetButton.attach(OFFSET_BUTTON_PIN, INPUT_PULLUP);
+  offsetButton.interval(5);
+
+  pinMode(WPS_LED, OUTPUT);
+  digitalWrite(WPS_LED, LOW);
+
+  pinMode(CONN_LED, OUTPUT);
+  digitalWrite(CONN_LED, HIGH);
 
   //Setup the MAX7219 for operation
   sc.DisplaySetup();
@@ -191,11 +209,15 @@ void loop() {
   if(flagButtonRead){
     wpsButton.update();
     refreshButton.update();
+    offsetButton.update();
     if(wpsButton.rose()){
       flagWpsConnect = true;
     }
     if(refreshButton.rose()){
       flagClockRefresh = true;
+    }
+    if(offsetButton.rose()){
+      flagClockOffset = true;
     }
   }
 
@@ -212,6 +234,17 @@ void loop() {
     clockKeeper = clockRefreshRate+1;
     setUpdateClockFlag();
     flagWpsConnect = false;
+  }
+
+  if(flagClockOffset){
+    Serial.println("Clock offset");
+    flagClockOffset = false;
+  }
+
+  if(WiFi.isConnected()){
+    digitalWrite(CONN_LED, LOW);
+  }else{
+    digitalWrite(CONN_LED, HIGH);
   }
 }
 
@@ -328,12 +361,24 @@ void storeNetworkInfo(struct network_info *ni){
 }
 
 void getWPSConnection(){
-    Serial.print("Waiting WPS connection");
-    WiFi.beginWPSConfig();
-    while(WiFi.status() != WL_CONNECTED){
-      delay(500);
-      Serial.print(".");
+    Serial.println("Waiting WPS connection");
+
+    //Activate WPS LED
+    digitalWrite(WPS_LED, HIGH);
+
+    int timeToTry  = 5;
+    while (timeToTry > 0){
+      if(WiFi.beginWPSConfig()){
+        Serial.println("WPS connection established.");
+        break;
+      }
+      Serial.print("WPS connection failed. Tryin again ...");
+      Serial.println(timeToTry, DEC);
+      timeToTry -= 1;
     }
+
+    //Disable WPS LED
+    digitalWrite(WPS_LED, LOW);
 
     Serial.println("");
     Serial.println("WPS connected");
