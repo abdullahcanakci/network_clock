@@ -424,7 +424,7 @@ $EndComp
 Wire Wire Line
 	900  1650 1450 1650
 Wire Wire Line
-	900  2150 1450 2150
+	900  2150 1150 2150
 Text Label 1450 1450 2    50   ~ 0
 DIG_0
 Text Label 1450 1550 2    50   ~ 0
@@ -540,8 +540,6 @@ Text Label 1600 4050 2    50   ~ 0
 SEG_G
 Text Label 1600 4150 2    50   ~ 0
 SEG_DP
-Text Label 2200 4050 0    50   ~ 0
-DIG_0
 Text Label 2200 4150 0    50   ~ 0
 DIG_0
 Text Label 3200 3450 2    50   ~ 0
@@ -559,8 +557,6 @@ SEG_G
 Text Label 3200 4150 2    50   ~ 0
 SEG_DP
 Text Label 3800 4050 0    50   ~ 0
-DIG_1
-Text Label 3800 4150 0    50   ~ 0
 DIG_1
 Text Label 1700 5700 2    50   ~ 0
 SEG_A
@@ -594,12 +590,8 @@ Text Label 3200 6000 2    50   ~ 0
 SEG_G
 Text Label 3200 6100 2    50   ~ 0
 SEG_DP
-Text Label 2300 6000 0    50   ~ 0
-DIG_2
 Text Label 2300 6100 0    50   ~ 0
 DIG_2
-Text Label 3800 6000 0    50   ~ 0
-DIG_3
 Text Label 3800 6100 0    50   ~ 0
 DIG_3
 $Comp
@@ -652,7 +644,7 @@ U 1 1 5D1AE497
 P 6200 4150
 F 0 "SW2" H 6200 4435 50  0000 C CNN
 F 1 "SW_Push" H 6200 4344 50  0000 C CNN
-F 2 "Button_Switch_THT:SW_PUSH_6mm" H 6200 4350 50  0001 C CNN
+F 2 "KicadLibrary:DTS-3" H 6200 4350 50  0001 C CNN
 F 3 "" H 6200 4350 50  0001 C CNN
 	1    6200 4150
 	1    0    0    -1  
@@ -663,7 +655,7 @@ U 1 1 5D1B1DF5
 P 6200 4550
 F 0 "SW3" H 6200 4835 50  0000 C CNN
 F 1 "SW_Push" H 6200 4744 50  0000 C CNN
-F 2 "Button_Switch_THT:SW_PUSH_6mm" H 6200 4750 50  0001 C CNN
+F 2 "KicadLibrary:DTS-3" H 6200 4750 50  0001 C CNN
 F 3 "" H 6200 4750 50  0001 C CNN
 	1    6200 4550
 	1    0    0    -1  
@@ -671,16 +663,14 @@ $EndComp
 $Comp
 L power:GNDREF #PWR0116
 U 1 1 5D1B2226
-P 6600 4700
-F 0 "#PWR0116" H 6600 4450 50  0001 C CNN
-F 1 "GNDREF" H 6605 4527 50  0000 C CNN
-F 2 "" H 6600 4700 50  0001 C CNN
-F 3 "" H 6600 4700 50  0001 C CNN
-	1    6600 4700
+P 6600 5000
+F 0 "#PWR0116" H 6600 4750 50  0001 C CNN
+F 1 "GNDREF" H 6605 4827 50  0000 C CNN
+F 2 "" H 6600 5000 50  0001 C CNN
+F 3 "" H 6600 5000 50  0001 C CNN
+	1    6600 5000
 	1    0    0    -1  
 $EndComp
-Wire Wire Line
-	6600 4700 6600 4550
 Wire Wire Line
 	6600 4550 6400 4550
 Wire Wire Line
@@ -694,7 +684,7 @@ U 1 1 5D1BA741
 P 6200 3700
 F 0 "SW1" H 6200 3985 50  0000 C CNN
 F 1 "SW_Push" H 6200 3894 50  0000 C CNN
-F 2 "Button_Switch_THT:SW_PUSH_6mm" H 6200 3900 50  0001 C CNN
+F 2 "KicadLibrary:DTS-3" H 6200 3900 50  0001 C CNN
 F 3 "" H 6200 3900 50  0001 C CNN
 	1    6200 3700
 	1    0    0    -1  
@@ -840,4 +830,48 @@ Wire Wire Line
 	6200 5500 6350 5500
 Wire Wire Line
 	6350 5900 6200 5900
+Wire Wire Line
+	6600 4550 6600 4900
+$Comp
+L Switch:SW_Push SW4
+U 1 1 5D145BE2
+P 6200 4900
+F 0 "SW4" H 6200 5185 50  0000 C CNN
+F 1 "SW_Push" H 6200 5094 50  0000 C CNN
+F 2 "KicadLibrary:DTS-3" H 6200 5100 50  0001 C CNN
+F 3 "" H 6200 5100 50  0001 C CNN
+	1    6200 4900
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	6400 4900 6600 4900
+Connection ~ 6600 4900
+Wire Wire Line
+	6600 4900 6600 5000
+Text Label 6000 4900 2    50   ~ 0
+BUT_RST
+Text Label 5900 1100 0    50   ~ 0
+BUT_RST
+Wire Wire Line
+	1450 1450 900  1450
+Wire Wire Line
+	900  1450 900  1550
+Connection ~ 900  1650
+Wire Wire Line
+	900  1550 1450 1550
+Connection ~ 900  1550
+Wire Wire Line
+	900  1550 900  1650
+Wire Wire Line
+	1450 2050 900  2050
+Wire Wire Line
+	900  2050 900  2150
+Connection ~ 900  2150
+Wire Wire Line
+	1450 2250 1150 2250
+Wire Wire Line
+	1150 2250 1150 2150
+Connection ~ 1150 2150
+Wire Wire Line
+	1150 2150 1450 2150
 $EndSCHEMATC
