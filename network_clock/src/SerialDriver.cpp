@@ -26,6 +26,11 @@ void SerialDriver::SetDisplays(){
 
 }
 
+void SerialDriver::setBrightness(uint8_t brightness){
+    _intensity = brightness;
+    SerialSend(_addressIntensity, brightness);
+}
+
 void SerialDriver::WriteDigit(uint8_t data, uint8_t digit){
     SerialSend(digit+1, data);
 }

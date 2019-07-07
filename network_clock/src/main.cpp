@@ -1,7 +1,11 @@
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <SerialDriver.h>
 #include <Ticker.h>
 #include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <ESP8266mDNS.h>  
+#include <FS.h>
 #include <WiFiUdp.h>
 #include <RTClib.h>
 #include <Bounce2.h>
@@ -16,6 +20,10 @@ void getUDPPacket();
 void getWPSConnection();
 void storeNetworkInfo(struct network_info *ni);
 bool getNetworkInfo(struct network_info *ni);
+
+void onIndex();
+void handleNotFound();
+bool handleFileRead(String path);
 
 // -------- DISPLAY
 void updateDisplayBuffer();
@@ -37,12 +45,23 @@ void setButtonReadFlag();
 void setWPSFlag();
 void setClockRefreshFlag();
 
+// -------- VARIOUS
+String getDeviceName();
+String getDevicePassword();
+uint8_t getDeviceBrightness();
+int16_t getTimeOffset();
+
 /* 
 #ifndef STASSID
 #define STASSID "Ithilien"
 #define STAPSK "147596328"
 #endif
 */ //FUTURE  PROOFING
+
+#define DEVICE_NAME "Clocky"
+#define DEVICE_PASSWORD "123456"
+#define DEVICE_BRIGHTNESS 4
+#define TIME_OFFSET 180
 
 #define SSID_ADDRESS 0 //32 byte 0-31
 #define PASSWORD_ADDRESS 32 // 64 bit  32-95
@@ -60,6 +79,13 @@ void setClockRefreshFlag();
 #define WPS_LED 16 //D3
 #define CONN_LED 2 //D4
 
+// ------------ DEVICE VARIABLES ------
+
+String _deviceName = DEVICE_NAME;
+String _devicePassword = DEVICE_PASSWORD;
+uint8_t _displayBrightness = DEVICE_BRIGHTNESS;
+int16_t _timeOffset = TIME_OFFSET;
+
 
 // ------------ NETWORK ---------------
 
@@ -72,6 +98,12 @@ const int NTP_PACKET_SIZE = 48;
 byte packetBuffer[NTP_PACKET_SIZE];
 
 WiFiUDP udp;
+
+// ------------ FILESYSTEM ----------
+
+
+ESP8266WebServer server(80);
+File fsUploadFile;
 
 // ------------ OBJECTS ------------
 
@@ -136,31 +168,19 @@ uint8_t numTable[] = {
   B01111011,
 };
 
-
-void setup() {
-  Serial.begin(115200);
-  delay(500);
-
-  Serial.println();
-  Serial.println();
-
+void clearEEPROM(){
   //CLEAR EEPROM
   // There is no such a thing as EEPROM on ESP12E.
   // But we are using part of a SPI flash as EEPROM.
-  /* EEPROM.begin(512);
+  
+  EEPROM.begin(512);
   for(int i = 0; i < 512; i++){
     EEPROM.write(i, 0);
   }
-  EEPROM.end();*/
+  EEPROM.end();
+}
 
-
-  /*
-  * We are using compile/upload? time to init the RTC
-  * So I don't have to determine whether or not the RTC needs to be 
-  * init or adjust on clock acquire.
-  */
-  milliClock.begin(DateTime(F(__DATE__), F(__TIME__)));
-
+void initPeripherals(){
   wpsButton.attach(WPS_BUTTON_PIN, INPUT_PULLUP);
   wpsButton.interval(5);
   refreshButton.attach(REFRESH_BUTTON_PIN, INPUT_PULLUP);
@@ -173,23 +193,113 @@ void setup() {
 
   pinMode(CONN_LED, OUTPUT);
   digitalWrite(CONN_LED, HIGH);
+}
 
+void initFileSystem(){
+  SPIFFS.begin();
+  Dir dir = SPIFFS.openDir("/");
+  while(dir.next()){
+    String fileName = dir.fileName();
+    Serial.print("FS File: ");
+    Serial.println(fileName);
+  }
+  
+}
+
+void initServer(){
+  server.onNotFound(handleNotFound);
+  server.begin();
+
+  //MDNS.begin("clock");
+  Serial.print("Open http://");
+  Serial.print("clock");
+  Serial.println(".local/to see the file browser");
+}
+
+/*
+ * Creates a network connection.
+ */
+void initNetwork(){
+
+  struct network_info ni;
+  bool niStored = getNetworkInfo(&ni);
+
+  WiFi.mode(WIFI_STA);
+
+  if(niStored){
+    //There is a network conn avaible in EEPROM
+    Serial.print("Connecting to ");
+    Serial.println(ni.ssid);
+    Serial.println(ni.password);
+    WiFi.begin(ni.ssid, ni.password);
+    while(WiFi.status() != WL_CONNECTED){
+      delay(500);
+      Serial.print(".");
+    }
+  } else {
+    //There is no preconfigured network.
+    getWPSConnection();
+  }
+
+  Serial.println("");
+  Serial.println("Connection established");
+
+  Serial.print("IP: ");
+  Serial.println(WiFi.localIP());
+  
+  //Starting an UDP port for NTP connections.
+  Serial.println("Starting UDP");
+  udp.begin(localPort);
+  Serial.print("Local port: ");
+  Serial.println(udp.localPort());
+
+  Serial.println();
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(500);
+
+  Serial.println();
+  Serial.println();
+
+  //clearEEPROM();
+
+  initPeripherals();
+
+  /*
+  * We are using compile/upload? time to init the RTC
+  * So I don't have to determine whether or not the RTC needs to be 
+  * init or adjust on clock acquire.
+  */
+  milliClock.begin(DateTime(F(__DATE__), F(__TIME__)));
+
+  
   //Setup the MAX7219 for operation
   sc.DisplaySetup();
+  sc.setBrightness(_displayBrightness);
   // This method updates displayDriver registers with the buffer ones.
   // Default buffer contains "Conn". So on boot we can see the display activated.
   updateDisplay();
 
-  //Connect to a network
-  getNetworkConnection();
+
+  initFileSystem();
+  initNetwork();
+  initServer();
+
 
   //Get Network Clock
   updateClock();
+  activateTickerInts();
   updateTimeTimer.attach(60*60, setUpdateClockFlag);
+
 }
 
 
 void loop() {
+  server.handleClient();
+  //MDNS.update();
+
   if(flagDisplayBufferUpdate){
     flagDisplayBufferUpdate = false;
     updateDisplayBuffer();
@@ -395,42 +505,6 @@ void getWPSConnection(){
 }
 
 /*
-* Connects to a network and creates a port for connections.
-*/
-
-void getNetworkConnection(){
-
-  struct network_info ni;
-  bool niStored = getNetworkInfo(&ni);
-
-  WiFi.mode(WIFI_STA);
-
-  if(niStored){
-    //There is a network conn avaible in EEPROM
-    Serial.print("Connecting to ");
-    Serial.println(ni.ssid);
-    Serial.println(ni.password);
-    WiFi.begin(ni.ssid, ni.password);
-    while(WiFi.status() != WL_CONNECTED){
-      delay(500);
-      Serial.print(".");
-    }
-  } else {
-    //There is no preconfigured network.
-    getWPSConnection();
-  }
-
-  Serial.println("");
-  Serial.println("Connection established");
-  
-  //Starting an UDP port for NTP connections.
-  Serial.println("Starting UDP");
-  udp.begin(localPort);
-  Serial.print("Local port: ");
-  Serial.println(udp.localPort());
-}
-
-/*
  *  Updates display buffer with new time values
  */
 void updateDisplayBuffer(){
@@ -445,9 +519,10 @@ void updateDisplayBuffer(){
 * Passes display buffer values into the drivers registers.
 */
 void updateDisplay(){
+
+  DateTime n = milliClock.now();
   for(int i = 0; i < 4; i++){
-    if((i == 1 || i == 2) && dotStatus ){
-    
+    if((i == 1 || i == 2) && dotStatus){
         sc.WriteDigit(displayBuffer[i] | B10000000, i);
       
     } else {
@@ -455,6 +530,85 @@ void updateDisplay(){
     }
   }
   dotStatus = !dotStatus;
+}
+
+void buildJsonAnswer(String *answer){
+  StaticJsonBuffer<400> jsonBuffer;
+  JsonObject& root = jsonBuffer.createObject();
+
+  struct station_config conf;
+  wifi_station_get_config(&conf);
+
+  root["ssid"] = WiFi.SSID(); //32 Byte + 4 byte
+  root["psk"] = WiFi.psk(); //64 Byte + 14Byte
+
+  root["dname"] = getDeviceName(); //20Byte
+  root["dpass"] = getDevicePassword(); //20byte
+  root["bright"] = getDeviceBrightness(); //byte
+
+  root["time"] = milliClock.now().unixtime();
+  root["timezone"] = getTimeOffset();
+}
+
+String getDeviceName(){
+  return _deviceName;
+}
+
+String getDevicePassword(){
+  return _devicePassword;
+}
+
+uint8_t getDeviceBrightness(){
+  return _displayBrightness;
+}
+
+int16_t getTimeOffset(){
+  return _timeOffset;
+}
+
+String getContentType(String filename){
+  if (filename.endsWith(".html")) {
+    return "text/html";
+  } else if (filename.endsWith(".css")) {
+    return "text/css";
+  } else if (filename.endsWith(".js")) {
+    return "application/javascript";
+  } else if (filename.endsWith(".svg")){
+    return "image/svg+xml";
+  }
+  return "text";
+}
+
+bool handleFileRead(String path){
+  //deactivateTickerInts();
+  Serial.println("Handle file read");
+  if(path.endsWith("/")){
+    path += "index.html";
+  }
+  String contentType = getContentType(path);
+  String pathWithGz = path + ".gz";
+  if(SPIFFS.exists(pathWithGz) || SPIFFS.exists(path)){
+    if(SPIFFS.exists(pathWithGz)){
+      path += ".gz";
+    }
+    File file = SPIFFS.open(path ,"r");
+    Serial.print("File open: ");
+    Serial.print(path);
+    server.streamFile(file, contentType);
+    file.close();
+    Serial.println("File closed.");
+
+    //activateTickerInts();
+    return true;
+  }
+  //activateTickerInts();
+  return false;
+}
+
+void handleNotFound(){
+  if (!handleFileRead(server.uri())) {        // check if the file exists in the flash memory (SPIFFS), if so, send it
+    server.send(404, "text/plain", "404: File Not Found");
+  }
 }
 
 // This methods will be called intervals to get clock from network and update local one.
