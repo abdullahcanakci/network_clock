@@ -22,6 +22,7 @@ void storeNetworkInfo(struct network_info *ni);
 bool getNetworkInfo(struct network_info *ni);
 
 void onIndex();
+void handleApiExchange();
 void handleNotFound();
 bool handleFileRead(String path);
 
@@ -207,10 +208,11 @@ void initFileSystem(){
 }
 
 void initServer(){
+  server.on("/api", HTTP_GET, handleApiExchange);
   server.onNotFound(handleNotFound);
   server.begin();
 
-  //MDNS.begin("clock");
+  MDNS.begin("clock");
   Serial.print("Open http://");
   Serial.print("clock");
   Serial.println(".local/to see the file browser");
@@ -298,7 +300,7 @@ void setup() {
 
 void loop() {
   server.handleClient();
-  //MDNS.update();
+  MDNS.update();
 
   if(flagDisplayBufferUpdate){
     flagDisplayBufferUpdate = false;
@@ -532,15 +534,15 @@ void updateDisplay(){
   dotStatus = !dotStatus;
 }
 
-void buildJsonAnswer(String *answer){
-  StaticJsonBuffer<400> jsonBuffer;
-  JsonObject& root = jsonBuffer.createObject();
+void buildJsonAnswer(char *output){
+  StaticJsonBuffer<400> buffer;
+  JsonObject& root = buffer.createObject();
 
   struct station_config conf;
   wifi_station_get_config(&conf);
 
   root["ssid"] = WiFi.SSID(); //32 Byte + 4 byte
-  root["psk"] = WiFi.psk(); //64 Byte + 14Byte
+  root["psk"] = WiFi.psk(); //64 Byte + 4 byte
 
   root["dname"] = getDeviceName(); //20Byte
   root["dpass"] = getDevicePassword(); //20byte
@@ -548,6 +550,7 @@ void buildJsonAnswer(String *answer){
 
   root["time"] = milliClock.now().unixtime();
   root["timezone"] = getTimeOffset();
+  root.printTo(output, 400);
 }
 
 String getDeviceName(){
@@ -610,6 +613,12 @@ void handleNotFound(){
     server.send(404, "text/plain", "404: File Not Found");
   }
 }
+void handleApiExchange(){
+  char buffer[400];
+  buildJsonAnswer(buffer);
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "application/json", buffer);
+}
 
 // This methods will be called intervals to get clock from network and update local one.
 void updateClock() {
@@ -671,7 +680,7 @@ void getClock(){
     Serial.println(epoch);
 
     parseClock(epoch);
-    setDisplayBufferFlag();
+    updateDisplayBuffer();
     activateTickerInts();
   }
 

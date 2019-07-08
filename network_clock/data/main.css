@@ -1,5 +1,5 @@
 * {
-    box-sizing: border-box;
+    box-sizing: content-box;
 }
 html {
     min-height: 100%;
@@ -13,21 +13,24 @@ body {
 }
 
 form div{ 
-    padding: 12px 20px;
+    padding: 16px 0px;
     display: flex;
     flex-direction: row;
-    justify-content: space-evenly;
+    justify-content: space-around;
 }
 
 form div label{
-    width: 200px;
-    align-self: center;
+    width: 140px;
+    margin-top: auto;
+    margin-bottom: auto;
 }
 form div input{
-    width: 200px;
+    width: auto;
+
 }
 
 #container{
+    padding: 0 16px;
     display: flex;
     flex-direction: column;
     justify-content: center;
