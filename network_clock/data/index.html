@@ -32,30 +32,32 @@
                         <label for="ssid_pasword">Network Pass:</label>
                         <input type="text" id="ssid_password">
                     </div>
-                    <div>
-                        <label for="timezone">Timezone(Minute):</label>
-                        <input type="number" id="timezone">
-                    </div>
+                    <button type="button" onclick="saveNetworkInfo()">Save</button>
                     </fieldset>
                     
                     <h4>Device</h4>
                     <fieldset>
                     <div>
+                        <label for="set_timezone">Timezone(Minute):</label>
+                        <input type="number" id="set_timezone">
+                    </div>                      
+                    <div>
                         <label for="brightness">Brightness:</label>
                         <input type="range" id=brightness min="0" max="15" step="1">
                     </div>
                     <div>
-                        <label for="stationname">Station Name:</label>
-                        <input type="text" id="stationname">
+                        <label for="station_name">Station Name:</label>
+                        <input type="text" id="station_name">
                     </div>
                     <div>
-                        <label for="stationpassword">Station Pass:</label>
-                        <input type="text" id="stationpassword">
+                        <label for="station_password">Station Pass:</label>
+                        <input type="text" id="station_password">
                     </div>
+                    <button type="button" onclick="saveDeviceInfo()">Save</button>
                     </fieldset>
                     <h4>Server</h4>
                     <fieldset>
-
+                        <button type="button" onclick="saveServerInfo()">Save</button>
                     </fieldset>
                     
             </form>

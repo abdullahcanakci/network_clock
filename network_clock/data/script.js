@@ -5,6 +5,16 @@ var screenHome = document.getElementById("home_div");
 
 var screens = [screenHome, screenSettings, screenInfo];
 
+var brightnessSlider = document.getElementById("brightness");
+
+var networkName = document.getElementById("ssid");
+var networkPass = document.getElementById("ssid_password");
+var deviceName = document.getElementById("station_name");
+var devicePassword = document.getElementById("station_password");
+var timezone = document.getElementById("set_timezone");
+
+brightnessSlider.addEventListener("change", updateBrightness);
+
 var deviceState;
 
 function go(id){
@@ -34,7 +44,7 @@ function onPageLoad(){
 
 function loadPage(){
     console.log("Load page");
-    fetch("http://192.168.1.103/api").then(function(response) {
+    fetch("/api").then(function(response) {
         response.text().then(function(text) {
           fillpage(text);
         });
@@ -50,12 +60,12 @@ function fillpage(jsonResponse){
 
     document.getElementById("timezone").innerHTML = "+" + tz;
     document.getElementById("connection").innerHTML = deviceState.ssid;
-    document.getElementById("ssid").value = deviceState.ssid;
-    document.getElementById("ssid_password").value = deviceState.psk;
-    document.getElementById("timezone").value = tz;
-    document.getElementById("brightness").value = deviceState.bright;
-    document.getElementById("stationname").value = deviceState.dname;
-    document.getElementById("stationpassword").value = deviceState.dpass;
+    networkName.value = deviceState.ssid;
+    networkPass.value = deviceState.psk;
+    timezone.value = tz;
+    brightnessSlider.value = deviceState.bright;
+    deviceName.value = deviceState.dname;
+    devicePassword.value = deviceState.dpass;
 }
 
 function parseTime(seconds){
@@ -63,7 +73,7 @@ function parseTime(seconds){
     second = seconds % 60;
     minute = Math.floor(seconds / 60) % 60;
     hour = Math.floor(seconds / (3600)) % 24;
-    
+
     second = padZero(second);
     minute = padZero(minute);
     hour = padZero(hour);
@@ -76,4 +86,46 @@ function padZero(num){
     var s = num  + "";
     if(s.length != 2) s = "0" + s;
     return s;
+}
+
+function updateBrightness(){
+    console.log(brightnessSlider.value);
+    console.log(JSON.stringify({bright: brightnessSlider.value}));
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api", true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.send(JSON.stringify({type : 0, bright: brightnessSlider.value}));
+}
+
+function saveNetworkInfo(){
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api", true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.send(JSON.stringify({
+        type : 1,
+        ssid : networkName.value,
+        psk : networkPass.value
+    }));
+}
+
+function saveDeviceInfo(){
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api", true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.send(JSON.stringify({
+        type : 2,
+        dname : deviceName.value,
+        dpass : devicePassword.value,
+        bright : brightnessSlider.value,
+        timezone : timezone.value
+    }));
+}
+
+function saveServerInfo(){
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api", true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.send(JSON.stringify({
+        type : 3
+    }));
 }

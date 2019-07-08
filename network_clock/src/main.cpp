@@ -23,6 +23,7 @@ bool getNetworkInfo(struct network_info *ni);
 
 void onIndex();
 void handleApiExchange();
+void handleApiInput();
 void handleNotFound();
 bool handleFileRead(String path);
 
@@ -208,7 +209,9 @@ void initFileSystem(){
 }
 
 void initServer(){
+  server.on("/", HTTP_POST, handleApiInput);
   server.on("/api", HTTP_GET, handleApiExchange);
+  server.on("/api", HTTP_POST, handleApiInput);
   server.onNotFound(handleNotFound);
   server.begin();
 
@@ -521,8 +524,6 @@ void updateDisplayBuffer(){
 * Passes display buffer values into the drivers registers.
 */
 void updateDisplay(){
-
-  DateTime n = milliClock.now();
   for(int i = 0; i < 4; i++){
     if((i == 1 || i == 2) && dotStatus){
         sc.WriteDigit(displayBuffer[i] | B10000000, i);
@@ -618,6 +619,81 @@ void handleApiExchange(){
   buildJsonAnswer(buffer);
   server.sendHeader("Access-Control-Allow-Origin", "*");
   server.send(200, "application/json", buffer);
+}
+
+void handleApiInput(){
+  StaticJsonBuffer<400> newBuffer;
+  JsonObject& root = newBuffer.parseObject(server.arg("plain"));
+  Serial.println(server.arg("plain"));
+
+  if(!root.success()){
+    Serial.println("parseObject() failed");
+    return;
+  }
+  uint8_t type = root["type"];
+  Serial.print("Request Type: ");
+  Serial.println(type);
+  //Types are
+  // 1 - Network
+  // 2 - Device
+  // 3 - Server
+
+  switch (type)
+  {
+  case 0:
+  {
+    uint8_t brightness = root["bright"];
+    sc.setBrightness(brightness);
+    _displayBrightness = brightness;
+    break;
+  }
+
+  case 1:
+  {
+    /* code */
+
+    const char *ssid = root["ssid"];
+    Serial.print("SSID: ");
+    Serial.println(ssid);
+
+    const char *psk = root["psk"];
+    Serial.print("PSK: ");
+    Serial.println(psk);
+
+    break;
+  }
+  case 2:
+  {
+
+    const char *deviceName = root["dname"];
+    const char *devicePass = root["dpass"];
+
+    uint16_t timezone = root["timezone"];
+    uint8_t brightness = root["bright"];
+    sc.setBrightness(brightness);
+    _displayBrightness = brightness;
+
+    Serial.print("Device Name: ");
+    Serial.println(deviceName);
+
+    Serial.print("Device Password: ");
+    Serial.println(devicePass);
+
+    Serial.print("Timezone: ");
+    Serial.println(timezone);
+
+    Serial.print("Brightness: ");
+    Serial.println(brightness);
+    break;
+  }
+  case 3:
+  {
+    break;
+  }
+  }
+
+  server.send ( 200, "text/json", "{success:true}" );
+
 }
 
 // This methods will be called intervals to get clock from network and update local one.
