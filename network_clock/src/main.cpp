@@ -1,190 +1,37 @@
-#include <Arduino.h>
-#include <ArduinoJson.h>
-#include <SerialDriver.h>
-#include <Ticker.h>
-#include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
-#include <ESP8266mDNS.h>  
-#include <FS.h>
-#include <WiFiUdp.h>
-#include <RTClib.h>
-#include <Bounce2.h>
-#include <user_interface.h>
-#include <EEPROM.h>
+#include "main.h"
 
-// ------------ PROTOTYPES ------------
-// -------- NETWORK
-void getNetworkConnection();
-void sendNTPpacket(IPAddress& address);
-void getUDPPacket();
-void getWPSConnection();
-void storeNetworkInfo(struct network_info *ni);
-bool getNetworkInfo(struct network_info *ni);
-
-bool loadCredentials();
-
-void onIndex();
-void handleApiExchange();
-void handleApiInput();
-void handleLogin();
-void handleNotFound();
-bool handleFileRead(String path);
-bool isAuthenticated();
-
-// -------- DISPLAY
-void updateDisplayBuffer();
-void updateDisplay();
-
-// -------- CLOCK
-void getClock();
-void parseClock(unsigned long epoch);
-void updateClock();
-// -------- INTERRUPTS
-void activateTickerInts();
-void deactivateTickerInts();
-
-// -------- FLAGS
-void setDisplayBufferFlag();
-void setDisplayUpdateFlag();
-void setUpdateClockFlag();
-void setButtonReadFlag();
-void setWPSFlag();
-void setClockRefreshFlag();
-
-// -------- VARIOUS
-bool loadDefaults();
-
-String getDeviceName();
-String getDevicePassword();
-
-#define DEVICE_NAME_SIZE 12
-#define DEVICE_PASS_SIZE 12
-#define DEVICE_BRIGHTNESS_SIZE 1
-
-#define SSID_SIZE 32
-#define PASSWORD_SIZE 64
-
-#define SSID_ADDRESS 0 //32 byte 0-31
-#define PASSWORD_ADDRESS 32 // 64 bit  32-95
-#define DEVICE_NAME_ADDRESS 96 //97-107
-#define DEVICE_PASS_ADDRESS 108 //108-119
-#define DEVICE_BRIGHTNESS_ADDRESS 120 //120-120
-#define DEVICE_TIME_OFFSET_ADDRESS 121 //121-122;
-#define DEVICE_FIRST_BOOT_ADDRESS 123 //123-123
-
-
-#define DATA_PIN 13
-#define CLOCK_PIN 14
-#define LATCH_PIN 15
-
-#define WPS_BUTTON_PIN 4
-#define REFRESH_BUTTON_PIN 5
-#define OFFSET_BUTTON_PIN 16
-
-#define WPS_LED 16 //D3
-#define CONN_LED 2 //D4
-
-
-// ------------ NETWORK ---------------
-
-unsigned int localPort = 2390;
-
-IPAddress timeServerIP;
-const char * ntpServerName = "time.nist.gov";
-
-const int NTP_PACKET_SIZE = 48;
-byte packetBuffer[NTP_PACKET_SIZE];
-
-WiFiUDP udp;
-
-// ------------ FILESYSTEM ----------
-
-ESP8266WebServer server(80);
-
-// ------------ OBJECTS ------------
-
-SerialDriver sc(DATA_PIN, CLOCK_PIN, LATCH_PIN);
-RTC_Millis milliClock;
-Bounce wpsButton = Bounce();
-Bounce refreshButton = Bounce();
-Bounce offsetButton = Bounce();
-
-
-// ------------ TIMERS -------------
-
-Ticker displayBufferUpdateTimer;
-Ticker displayUpdateTimer;
-Ticker networkRequestTimer;
-Ticker updateTimeTimer;
-Ticker buttonUpdateTimer;
-//Clock refresh rate in hours
-uint8_t clockRefreshRate = 6;
-uint8_t clockKeeper = 6;
-
-// ------------ STRUCTS --------------
-
-struct network_info {
-    char ssid[32];
-    char password[64];
-};
-
-typedef struct Device_Info_t {
-  char ssid[32];
-  char psk[64];
-  char name[12];
-  char loginName[12];
-  char password[12];
-  uint8_t brightness;
-  int16_t timeOffset;
-}Device_Info;
-
-Device_Info_t deviceInfo;
-
-// ------------ VARIABLES ------------
-//NETWORK
-bool packetSent = false;
-int timeToTry = 10; //Times to read UDP packet before sending another one
-
-uint8_t displayBuffer[4] = {B01001110, B00011101, B00010101, B00010101};
-bool dotStatus = true;
-
-// ------------ FLAGS -----------
-bool flagDisplayBufferUpdate;
-bool flagDisplayUpdate;
-bool flagNetworkRequest;
-bool flagClockUpdate;
-bool flagWpsConnect;
-bool flagClockRefresh;
-bool flagButtonRead;
-bool flagClockOffset;
-
-
-// ------------ NUM REF TABLE ---------------
-uint8_t numTable[] = {
-  B01111110,
-  B00110000,
-  B01101101,
-  B01111001,
-  B00110011,
-  B01011011,
-  B00011111,
-  B01110000,
-  B01111111,
-  B01111011,
-};
-
-void clearEEPROM(){
-  //CLEAR EEPROM
-  // There is no such a thing as EEPROM on ESP12E.
-  // But we are using part of a SPI flash as EEPROM.
+void setup() {
+  Serial.begin(115200);
+  delay(500);
   
-  EEPROM.begin(512);
-  for(int i = 0; i < 512; i++){
-    EEPROM.write(i, 0);
-  }
-  EEPROM.end();
+  //Load credentials from flash "/creds.txt" file
+  loadCredentials();
+  delay(500);
+
+  //Init Peripherals. Buttons, displays etc
+  initPeripherals();
+
+  //Init clock
+  milliClock.begin(DateTime(F(__DATE__), F(__TIME__)));
+  
+  //Init display
+  sc.DisplaySetup();
+  sc.setBrightness(deviceInfo.brightness);
+  updateDisplay();
+
+  initNetwork();
+  initServer();
+
+  //Get Network Clock
+  updateClock();
+  activateTickerInts();
+  updateTimeTimer.attach(60*60, setUpdateClockFlag);
+
 }
 
+/*
+ * Inits peripherals like buttons leds etc to their initial state
+ */
 void initPeripherals(){
   wpsButton.attach(WPS_BUTTON_PIN, INPUT_PULLUP);
   wpsButton.interval(5);
@@ -200,16 +47,6 @@ void initPeripherals(){
   digitalWrite(CONN_LED, HIGH);
 }
 
-void initFileSystem(){
-  SPIFFS.begin();
-  Dir dir = SPIFFS.openDir("/");
-  while(dir.next()){
-    String fileName = dir.fileName();
-    Serial.print("FS File: ");
-    Serial.println(fileName);
-  }
-  SPIFFS.end();
-}
 
 void initServer(){
   server.on("/", HTTP_POST, handleApiInput);
@@ -219,6 +56,7 @@ void initServer(){
   server.onNotFound(handleNotFound);
 
 
+  //These are required to use cookie based auth
   const char * headerKeys[] = {"User-Agent", "Cookie"};
   size_t headerKeysSize = sizeof(headerKeys) / sizeof(char*);
 
@@ -226,6 +64,7 @@ void initServer(){
 
   server.begin();
 
+  //init dns system
   MDNS.begin("clock");
   Serial.print("Open http://");
   Serial.print("clock");
@@ -236,20 +75,12 @@ void initServer(){
  * Creates a network connection.
  */
 void initNetwork(){
-
+  //If we have connected to a network connect it again
   bool niStored = deviceInfo.ssid != 0 && deviceInfo.psk != 0;
 
   WiFi.mode(WIFI_STA);
 
   if(niStored){
-    //There is a network conn avaible in EEPROM
-
-    Serial.print("Connecting to ");
-    Serial.print(deviceInfo.ssid);
-    Serial.println("");
-  
-    Serial.print(deviceInfo.psk);
-    Serial.println("");
     WiFi.begin(deviceInfo.ssid, deviceInfo.psk);
     while(WiFi.status() != WL_CONNECTED){
       delay(500);
@@ -274,49 +105,6 @@ void initNetwork(){
 
   Serial.println();
 }
-
-void setup() {
-  Serial.begin(115200);
-  delay(500);
-
-  Serial.println();
-  Serial.println();
-
-  loadCredentials();
-  delay(500);
-
-  //clearEEPROM();
-
-  initPeripherals();
-
-  /*
-  * We are using compile/upload? time to init the RTC
-  * So I don't have to determine whether or not the RTC needs to be 
-  * init or adjust on clock acquire.
-  */
-  milliClock.begin(DateTime(F(__DATE__), F(__TIME__)));
-
-  
-  //Setup the MAX7219 for operation
-  sc.DisplaySetup();
-  sc.setBrightness(deviceInfo.brightness);
-  // This method updates displayDriver registers with the buffer ones.
-  // Default buffer contains "Conn". So on boot we can see the display activated.
-  updateDisplay();
-
-
-  initFileSystem();
-  initNetwork();
-  initServer();
-
-
-  //Get Network Clock
-  //updateClock();
-  activateTickerInts();
-  updateTimeTimer.attach(60*60, setUpdateClockFlag);
-
-}
-
 
 void loop() {
   server.handleClient();
@@ -408,6 +196,7 @@ void setClockRefreshFlag(){
   flagClockRefresh = true; 
 }
 
+// Activate Time based interrupts
 void activateTickerInts(){
   //Timer to update display buffer
   displayBufferUpdateTimer.attach(5, setDisplayBufferFlag);
@@ -417,7 +206,7 @@ void activateTickerInts(){
   buttonUpdateTimer.attach_ms(5, setButtonReadFlag);
 }
 
-//As I know wifi creaupdates problems when there are interrupts shorter than 2ms
+// As I know wifi creates problems when there are interrupts with downtime shorter than 2ms
 // We are disabling all short term interrupts so they won't bother network stack
 void deactivateTickerInts(){
   displayBufferUpdateTimer.detach();
@@ -426,72 +215,8 @@ void deactivateTickerInts(){
 }
 
 /*
- * Reads Network info from EEPROM if no network info is present returns false
+ * Loads credentials from flash.
  */
-bool getNetworkInfo(struct network_info *ni){
-  EEPROM.begin(512);
-  char ssid[SSID_SIZE];
-  char pass[PASSWORD_SIZE];
-
-  int index = 0;
-  //This counter used for tracking number of zeroes in SSID or PASSWORD
-  //If they are equal to SSID or PASSWORD size we can assume the we didn't write anything EEPROM
-  //For this to work reliably we have to prefill our EEPROM with zeroes. Otherwise trash data will break this.
-
-  uint8_t counter = 0;
-  for(int address = SSID_ADDRESS; address < SSID_ADDRESS + SSID_SIZE; address++){
-    ssid[index] = EEPROM.read(address);
-    if(ssid[index] == 0){
-      counter ++;
-    }
-    index++;
-  }
-  if (counter == 32){
-    EEPROM.end();
-    return false;
-  }
-
-  index = 0;
-  counter = 0;
-  for(int address = PASSWORD_ADDRESS; address < PASSWORD_ADDRESS + PASSWORD_SIZE - 1 ; address++){
-    pass[index] = EEPROM.read(address);
-    if(pass[index] == 0){
-      counter++;
-    }
-    index++;
-  }
-  if(counter == 64){
-    EEPROM.end();
-    return false;
-  }
-
-  EEPROM.end();
-
-
-  memcpy(ni->ssid, ssid, sizeof(ssid));
-  memcpy(ni->password, pass, sizeof(pass));
-  return true;
-}
-
-/*
- * Store provided network info to the EEPROM.
- */
-void storeNetworkInfo(struct network_info *ni){
-  EEPROM.begin(512);
-  int index = 0;
-  for(int address = SSID_ADDRESS; address < SSID_ADDRESS + SSID_SIZE; address++){
-    EEPROM.write(address, ni->ssid[index]);
-    index++;
-  }
-  index = 0;
-  for(int address = PASSWORD_ADDRESS; address < PASSWORD_ADDRESS + PASSWORD_SIZE - 1 ; address++){
-    EEPROM.write(address, ni->password[index]);
-    index++;
-  }
-  EEPROM.commit();
-  EEPROM.end();
-}
-
 bool loadCredentials(){
   SPIFFS.begin();
   File credFile = SPIFFS.open("/creds.txt", "r");
@@ -557,6 +282,9 @@ bool loadCredentials(){
   return true;
 }
 
+/*
+ * Saves credentials to flash with CSV pattern
+ */
 void saveCredentials(){
   SPIFFS.begin();
   File creds = SPIFFS.open("/creds.txt", "w");
@@ -584,7 +312,10 @@ void saveCredentials(){
   SPIFFS.end();
 }
 
-
+/*
+ * Connects to a open WPS connection
+ * TODO: More testing required
+ */
 void getWPSConnection(){
     Serial.println("Waiting WPS connection");
 
@@ -611,7 +342,6 @@ void getWPSConnection(){
     struct station_config conf;
     wifi_station_get_config(&conf);
 
-    // Save network info to EEPROM
     memcpy(deviceInfo.ssid, conf.ssid, sizeof(conf.ssid));
     memcpy(deviceInfo.psk, conf.password, sizeof(conf.password));
 
@@ -644,6 +374,27 @@ void updateDisplay(){
   dotStatus = !dotStatus;
 }
 
+/*
+ * Handles filetype to HTML content type conversion
+ */
+String getContentType(String filename){
+  if (filename.endsWith(".html")) {
+    return "text/html";
+  } else if (filename.endsWith(".css")) {
+    return "text/css";
+  } else if (filename.endsWith(".js")) {
+    return "application/javascript";
+  } else if (filename.endsWith(".svg")){
+    return "image/svg+xml";
+  }
+  return "text";
+}
+
+/*
+ * Main Api response.
+ * Builds main api response to clients.
+ * Checks auth.
+ */
 void buildJsonAnswer(char *output){
   StaticJsonBuffer<400> buffer;
   JsonObject& root = buffer.createObject();
@@ -667,19 +418,10 @@ void buildJsonAnswer(char *output){
   root.printTo(output, 400);
 }
 
-String getContentType(String filename){
-  if (filename.endsWith(".html")) {
-    return "text/html";
-  } else if (filename.endsWith(".css")) {
-    return "text/css";
-  } else if (filename.endsWith(".js")) {
-    return "application/javascript";
-  } else if (filename.endsWith(".svg")){
-    return "image/svg+xml";
-  }
-  return "text";
-}
-
+/*
+ * Handles reading and uploading of requested files from clients.
+ * Blocks access to "/creds.txt"
+ */
 bool handleFileRead(String path){
   //deactivateTickerInts();
   SPIFFS.begin();
@@ -712,11 +454,16 @@ bool handleFileRead(String path){
   return false;
 }
 
+/*
+ * If a page not found we came here.
+ * Should update with a real webpage
+ */
 void handleNotFound(){
   if (!handleFileRead(server.uri())) {        // check if the file exists in the flash memory (SPIFFS), if so, send it
     server.send(404, "text/plain", "404: File Not Found");
   }
 }
+
 void handleApiExchange(){
   char buffer[400];
   buildJsonAnswer(buffer);
@@ -724,6 +471,10 @@ void handleApiExchange(){
   server.send(200, "application/json", buffer);
 }
 
+/*
+ * Handles API post request.
+ * Parsing, determining key:value pairs etc are all done inside.
+ */
 void handleApiInput(){
   StaticJsonBuffer<400> newBuffer;
   JsonObject& root = newBuffer.parseObject(server.arg("plain"));
@@ -737,6 +488,7 @@ void handleApiInput(){
   Serial.print("Request Type: ");
   Serial.println(type);
   //Types are
+  // 0 - Brightness
   // 1 - Network
   // 2 - Device
   // 3 - Server
@@ -816,7 +568,9 @@ bool isAuthenticated() {
   return false;
 }
 
-
+/*
+ * Handles checking of credentials, cookies etc.
+ */
 void handleLogin(){
   if(server.hasHeader("Cookie")){
     Serial.println("Found cookie:");
@@ -857,7 +611,7 @@ void updateClock() {
 
   //deactivate Interrupts so the WiFi can work on it's own.
   deactivateTickerInts();
-  networkRequestTimer.attach(0.3, setNetworkRequestFlag);
+  networkRequestTimer.attach(0.1, setNetworkRequestFlag);
 }
 
 //Gets clock from network source and provides soft rtc with the results.

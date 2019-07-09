@@ -1,1 +1,1 @@
-network_name,network_password,Clocky,admin,123456,4,180,
+,,Clocky,admin,123456,4,180,

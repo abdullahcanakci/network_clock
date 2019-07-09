@@ -1,0 +1,171 @@
+#ifndef MAIN_H
+#define MAIN_H
+
+#include <Arduino.h>
+#include <ArduinoJson.h>
+#include <SerialDriver.h>
+#include <Ticker.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <ESP8266mDNS.h>  
+#include <FS.h>
+#include <WiFiUdp.h>
+#include <RTClib.h>
+#include <Bounce2.h>
+#include <user_interface.h>
+
+#define DEVICE_NAME_SIZE 12
+#define DEVICE_PASS_SIZE 12
+
+#define SSID_SIZE 32
+#define PASSWORD_SIZE 64
+
+#define DATA_PIN 13
+#define CLOCK_PIN 14
+#define LATCH_PIN 15
+
+#define WPS_BUTTON_PIN 4
+#define REFRESH_BUTTON_PIN 5
+#define OFFSET_BUTTON_PIN 16
+
+#define WPS_LED 16 //D3
+#define CONN_LED 2 //D4
+
+
+
+// -------- NETWORK
+void getNetworkConnection();
+void sendNTPpacket(IPAddress& address);
+void getUDPPacket();
+void getWPSConnection();
+
+// -------- SERVER
+
+void onIndex();
+void handleLogin();
+bool isAuthenticated();
+void handleApiExchange();
+void handleApiInput();
+void handleNotFound();
+bool handleFileRead(String path);
+
+// -------- DISPLAY
+void updateDisplayBuffer();
+void updateDisplay();
+
+// -------- CLOCK
+void getClock();
+void parseClock(unsigned long epoch);
+void updateClock();
+
+// -------- INTERRUPTS
+void activateTickerInts();
+void deactivateTickerInts();
+
+// -------- FLAGS
+void setDisplayBufferFlag();
+void setDisplayUpdateFlag();
+void setUpdateClockFlag();
+void setButtonReadFlag();
+void setWPSFlag();
+void setClockRefreshFlag();
+
+// -------- VARIOUS
+bool loadCredentials();
+void saveCredentials();
+
+void initPeripherals();
+void initNetwork();
+void initServer();
+
+
+/*
+ *
+ * -----------VARIABLES
+ *
+ */
+
+// ------NETWORK
+// ------------ NETWORK ---------------
+
+// NTP -------------
+unsigned int localPort = 2390;
+
+IPAddress timeServerIP;
+const char * ntpServerName = "time.nist.gov";
+
+const int NTP_PACKET_SIZE = 48;
+byte packetBuffer[NTP_PACKET_SIZE];
+
+WiFiUDP udp;
+
+bool packetSent = false;
+int timeToTry = 10; //Times to read UDP packet before sending another one
+
+uint8_t displayBuffer[4] = {B01001110, B00011101, B00010101, B00010101};
+bool dotStatus = true;
+
+
+// FILESYSTEM ----------
+
+ESP8266WebServer server(80);
+
+// OBJECTS ------------
+SerialDriver sc(DATA_PIN, CLOCK_PIN, LATCH_PIN);
+RTC_Millis milliClock;
+Bounce wpsButton = Bounce();
+Bounce refreshButton = Bounce();
+Bounce offsetButton = Bounce();
+
+// TIMERS -------------
+
+Ticker displayBufferUpdateTimer;
+Ticker displayUpdateTimer;
+Ticker networkRequestTimer;
+Ticker updateTimeTimer;
+Ticker buttonUpdateTimer;
+//Clock refresh rate in hours
+uint8_t clockRefreshRate = 6;
+uint8_t clockKeeper = 6;
+
+// ------------ STRUCTS --------------
+
+typedef struct Device_Info_t {
+  char ssid[32];
+  char psk[64];
+  char name[12];
+  char loginName[12];
+  char password[12];
+  uint8_t brightness;
+  int16_t timeOffset;
+}Device_Info;
+
+Device_Info_t deviceInfo;
+
+
+// ------------ FLAGS -----------
+bool flagDisplayBufferUpdate;
+bool flagDisplayUpdate;
+bool flagNetworkRequest;
+bool flagClockUpdate;
+bool flagWpsConnect;
+bool flagClockRefresh;
+bool flagButtonRead;
+bool flagClockOffset;
+
+
+// ------------ NUM REF TABLE ---------------
+uint8_t numTable[] = {
+  B01111110,
+  B00110000,
+  B01101101,
+  B01111001,
+  B00110011,
+  B01011011,
+  B00011111,
+  B01110000,
+  B01111111,
+  B01111011,
+};
+
+#endif
