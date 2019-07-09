@@ -1,0 +1,6 @@
+network_name
+network_password
+Clocky
+123456
+4
+180

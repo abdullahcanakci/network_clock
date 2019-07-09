@@ -62,7 +62,7 @@ function fillpage(jsonResponse){
     document.getElementById("connection").innerHTML = deviceState.ssid;
     networkName.value = deviceState.ssid;
     networkPass.value = deviceState.psk;
-    timezone.value = tz;
+    timezone.value = deviceState.timezone;
     brightnessSlider.value = deviceState.bright;
     deviceName.value = deviceState.dname;
     devicePassword.value = deviceState.dpass;
@@ -106,6 +106,7 @@ function saveNetworkInfo(){
         ssid : networkName.value,
         psk : networkPass.value
     }));
+    loadPage();
 }
 
 function saveDeviceInfo(){
@@ -119,6 +120,7 @@ function saveDeviceInfo(){
         bright : brightnessSlider.value,
         timezone : timezone.value
     }));
+    loadPage();
 }
 
 function saveServerInfo(){
@@ -128,4 +130,5 @@ function saveServerInfo(){
     xhr.send(JSON.stringify({
         type : 3
     }));
+    loadPage();
 }

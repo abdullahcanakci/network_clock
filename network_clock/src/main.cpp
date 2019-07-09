@@ -21,6 +21,8 @@ void getWPSConnection();
 void storeNetworkInfo(struct network_info *ni);
 bool getNetworkInfo(struct network_info *ni);
 
+bool loadCredentials();
+
 void onIndex();
 void handleApiExchange();
 void handleApiInput();
@@ -48,27 +50,26 @@ void setWPSFlag();
 void setClockRefreshFlag();
 
 // -------- VARIOUS
+bool loadDefaults();
+
 String getDeviceName();
 String getDevicePassword();
-uint8_t getDeviceBrightness();
-int16_t getTimeOffset();
 
-/* 
-#ifndef STASSID
-#define STASSID "Ithilien"
-#define STAPSK "147596328"
-#endif
-*/ //FUTURE  PROOFING
+#define DEVICE_NAME_SIZE 12
+#define DEVICE_PASS_SIZE 12
+#define DEVICE_BRIGHTNESS_SIZE 1
 
-#define DEVICE_NAME "Clocky"
-#define DEVICE_PASSWORD "123456"
-#define DEVICE_BRIGHTNESS 4
-#define TIME_OFFSET 180
+#define SSID_SIZE 32
+#define PASSWORD_SIZE 64
 
 #define SSID_ADDRESS 0 //32 byte 0-31
 #define PASSWORD_ADDRESS 32 // 64 bit  32-95
-#define SSID_SIZE 32
-#define PASSWORD_SIZE 64
+#define DEVICE_NAME_ADDRESS 96 //97-107
+#define DEVICE_PASS_ADDRESS 108 //108-119
+#define DEVICE_BRIGHTNESS_ADDRESS 120 //120-120
+#define DEVICE_TIME_OFFSET_ADDRESS 121 //121-122;
+#define DEVICE_FIRST_BOOT_ADDRESS 123 //123-123
+
 
 #define DATA_PIN 13
 #define CLOCK_PIN 14
@@ -80,13 +81,6 @@ int16_t getTimeOffset();
 
 #define WPS_LED 16 //D3
 #define CONN_LED 2 //D4
-
-// ------------ DEVICE VARIABLES ------
-
-String _deviceName = DEVICE_NAME;
-String _devicePassword = DEVICE_PASSWORD;
-uint8_t _displayBrightness = DEVICE_BRIGHTNESS;
-int16_t _timeOffset = TIME_OFFSET;
 
 
 // ------------ NETWORK ---------------
@@ -105,7 +99,6 @@ WiFiUDP udp;
 
 
 ESP8266WebServer server(80);
-File fsUploadFile;
 
 // ------------ OBJECTS ------------
 
@@ -114,7 +107,6 @@ RTC_Millis milliClock;
 Bounce wpsButton = Bounce();
 Bounce refreshButton = Bounce();
 Bounce offsetButton = Bounce();
-
 
 
 // ------------ TIMERS -------------
@@ -135,11 +127,21 @@ struct network_info {
     char password[64];
 };
 
+typedef struct Device_Info_t {
+  char ssid[32];
+  char psk[64];
+  char name[12];
+  char password[12];
+  uint8_t brightness;
+  int16_t timeOffset;
+}Device_Info;
+
+Device_Info_t deviceInfo;
 
 // ------------ VARIABLES ------------
 //NETWORK
 bool packetSent = false;
-int gmtOffset = 3;
+int gmtOffset = 180;
 int timeToTry = 10; //Times to read UDP packet before sending another one
 
 uint8_t displayBuffer[4] = {B01001110, B00011101, B00010101, B00010101};
@@ -205,7 +207,7 @@ void initFileSystem(){
     Serial.print("FS File: ");
     Serial.println(fileName);
   }
-  
+  SPIFFS.end();
 }
 
 void initServer(){
@@ -226,17 +228,19 @@ void initServer(){
  */
 void initNetwork(){
 
-  struct network_info ni;
-  bool niStored = getNetworkInfo(&ni);
+  bool niStored = deviceInfo.ssid != 0 && deviceInfo.psk != 0;
 
   WiFi.mode(WIFI_STA);
 
   if(niStored){
     //There is a network conn avaible in EEPROM
     Serial.print("Connecting to ");
-    Serial.println(ni.ssid);
-    Serial.println(ni.password);
-    WiFi.begin(ni.ssid, ni.password);
+    Serial.print(deviceInfo.ssid);
+    Serial.println("&&");
+  
+    Serial.print(deviceInfo.psk);
+    Serial.println("&&");
+    WiFi.begin(deviceInfo.ssid, deviceInfo.psk);
     while(WiFi.status() != WL_CONNECTED){
       delay(500);
       Serial.print(".");
@@ -268,6 +272,9 @@ void setup() {
   Serial.println();
   Serial.println();
 
+  loadCredentials();
+  delay(500);
+
   //clearEEPROM();
 
   initPeripherals();
@@ -282,7 +289,7 @@ void setup() {
   
   //Setup the MAX7219 for operation
   sc.DisplaySetup();
-  sc.setBrightness(_displayBrightness);
+  sc.setBrightness(deviceInfo.brightness);
   // This method updates displayDriver registers with the buffer ones.
   // Default buffer contains "Conn". So on boot we can see the display activated.
   updateDisplay();
@@ -294,7 +301,7 @@ void setup() {
 
 
   //Get Network Clock
-  updateClock();
+  //updateClock();
   activateTickerInts();
   updateTimeTimer.attach(60*60, setUpdateClockFlag);
 
@@ -475,6 +482,84 @@ void storeNetworkInfo(struct network_info *ni){
   EEPROM.end();
 }
 
+bool loadCredentials(){
+  SPIFFS.begin();
+  File credFile = SPIFFS.open("/creds.txt", "r");
+  if(!credFile){
+    Serial.println("Credentials file can't be opened");
+  }
+
+  char buffer[64];
+  int index = 0;
+  while (credFile.available()) {
+    int l = credFile.readBytesUntil('\n', buffer, sizeof(buffer));
+    buffer[l] = 0;
+    switch (index)
+    {
+    case 0:{
+      memcpy(deviceInfo.ssid, buffer, l);
+      break;
+    }
+    case 1:
+    {
+      memcpy(deviceInfo.psk, buffer, l);
+      break;
+    }
+    case 2:
+    {
+      memcpy(deviceInfo.name , buffer, l);
+      break;
+    }
+    case 3:
+    {
+      memcpy(deviceInfo.password, buffer, l);
+      break;
+    }
+    case 4:
+    {
+      String s = buffer;
+      uint8_t b = s.toInt();
+      s.~String();
+      deviceInfo.brightness = b;
+      break;
+    }
+    case 5:
+    {
+      String s = buffer;
+      uint16_t b = s.toInt();
+      s.~String();
+      deviceInfo.timeOffset = b;
+      break;
+    }
+    }
+
+    index++;
+  }
+  credFile.close();
+  SPIFFS.end();
+  return true;
+}
+
+void saveCredentials(){
+  SPIFFS.begin();
+  File creds = SPIFFS.open("/creds.txt", "w");
+
+  creds.println(deviceInfo.ssid);
+  creds.println(deviceInfo.psk);
+  creds.println(deviceInfo.name);
+  creds.println(deviceInfo.password);
+  creds.println(deviceInfo.brightness);
+  creds.println(deviceInfo.timeOffset);
+
+  creds.close();
+  SPIFFS.end();
+
+
+
+  SPIFFS.end();
+}
+
+
 void getWPSConnection(){
     Serial.println("Waiting WPS connection");
 
@@ -501,12 +586,11 @@ void getWPSConnection(){
     struct station_config conf;
     wifi_station_get_config(&conf);
 
-    struct network_info ni;
     // Save network info to EEPROM
-    memcpy(ni.ssid, conf.ssid, sizeof(conf.ssid));
-    memcpy(ni.password, conf.password, sizeof(conf.password));
+    memcpy(deviceInfo.ssid, conf.ssid, sizeof(conf.ssid));
+    memcpy(deviceInfo.psk, conf.password, sizeof(conf.password));
 
-    storeNetworkInfo(&ni);
+    saveCredentials();
 }
 
 /*
@@ -542,32 +626,16 @@ void buildJsonAnswer(char *output){
   struct station_config conf;
   wifi_station_get_config(&conf);
 
-  root["ssid"] = WiFi.SSID(); //32 Byte + 4 byte
-  root["psk"] = WiFi.psk(); //64 Byte + 4 byte
+  root["ssid"] = deviceInfo.ssid; //32 Byte + 4 byte
+  root["psk"] = deviceInfo.psk; //64 Byte + 4 byte
 
-  root["dname"] = getDeviceName(); //20Byte
-  root["dpass"] = getDevicePassword(); //20byte
-  root["bright"] = getDeviceBrightness(); //byte
+  root["dname"] = deviceInfo.name; //20Byte
+  root["dpass"] = deviceInfo.password; //20byte
+  root["bright"] = deviceInfo.brightness; //byte
 
   root["time"] = milliClock.now().unixtime();
-  root["timezone"] = getTimeOffset();
+  root["timezone"] = deviceInfo.timeOffset;
   root.printTo(output, 400);
-}
-
-String getDeviceName(){
-  return _deviceName;
-}
-
-String getDevicePassword(){
-  return _devicePassword;
-}
-
-uint8_t getDeviceBrightness(){
-  return _displayBrightness;
-}
-
-int16_t getTimeOffset(){
-  return _timeOffset;
 }
 
 String getContentType(String filename){
@@ -585,9 +653,14 @@ String getContentType(String filename){
 
 bool handleFileRead(String path){
   //deactivateTickerInts();
+  SPIFFS.begin();
   Serial.println("Handle file read");
   if(path.endsWith("/")){
     path += "index.html";
+  }
+  if(path.endsWith("/creds.txt")){
+    SPIFFS.end();
+    return false;
   }
   String contentType = getContentType(path);
   String pathWithGz = path + ".gz";
@@ -606,6 +679,7 @@ bool handleFileRead(String path){
     return true;
   }
   //activateTickerInts();
+  SPIFFS.end();
   return false;
 }
 
@@ -626,6 +700,8 @@ void handleApiInput(){
   JsonObject& root = newBuffer.parseObject(server.arg("plain"));
   Serial.println(server.arg("plain"));
 
+  bool reboot = false;
+
   if(!root.success()){
     Serial.println("parseObject() failed");
     return;
@@ -644,14 +720,12 @@ void handleApiInput(){
   {
     uint8_t brightness = root["bright"];
     sc.setBrightness(brightness);
-    _displayBrightness = brightness;
+    deviceInfo.brightness = brightness;
     break;
   }
 
   case 1:
   {
-    /* code */
-
     const char *ssid = root["ssid"];
     Serial.print("SSID: ");
     Serial.println(ssid);
@@ -659,7 +733,13 @@ void handleApiInput(){
     const char *psk = root["psk"];
     Serial.print("PSK: ");
     Serial.println(psk);
-
+    if(!(WiFi.SSID().equals(deviceInfo.ssid)) || (!WiFi.psk().equals(deviceInfo.psk))){
+      //We have updated credentials. Update them
+      network_info ni;
+      memcpy(deviceInfo.ssid, ssid, SSID_SIZE);
+      memcpy(deviceInfo.psk, psk, PASSWORD_SIZE);
+      reboot = true;
+    }
     break;
   }
   case 2:
@@ -668,22 +748,14 @@ void handleApiInput(){
     const char *deviceName = root["dname"];
     const char *devicePass = root["dpass"];
 
-    uint16_t timezone = root["timezone"];
+    int16_t timezone = root["timezone"];
     uint8_t brightness = root["bright"];
-    sc.setBrightness(brightness);
-    _displayBrightness = brightness;
 
-    Serial.print("Device Name: ");
-    Serial.println(deviceName);
-
-    Serial.print("Device Password: ");
-    Serial.println(devicePass);
-
-    Serial.print("Timezone: ");
-    Serial.println(timezone);
-
-    Serial.print("Brightness: ");
-    Serial.println(brightness);
+    memcpy(deviceInfo.name, deviceName, DEVICE_NAME_SIZE);
+    memcpy(deviceInfo.password, devicePass, DEVICE_PASS_SIZE);
+    deviceInfo.brightness = brightness;
+    deviceInfo.timeOffset = timezone;
+    reboot = true;
     break;
   }
   case 3:
@@ -693,7 +765,8 @@ void handleApiInput(){
   }
 
   server.send ( 200, "text/json", "{success:true}" );
-
+  saveCredentials();
+  delay(1000);
 }
 
 // This methods will be called intervals to get clock from network and update local one.
@@ -705,7 +778,7 @@ void updateClock() {
 
   //deactivate Interrupts so the WiFi can work on it's own.
   deactivateTickerInts();
-  networkRequestTimer.attach(0.1, setNetworkRequestFlag);
+  networkRequestTimer.attach(0.3, setNetworkRequestFlag);
 }
 
 //Gets clock from network source and provides soft rtc with the results.
@@ -720,7 +793,6 @@ void getClock(){
 
   int cb = udp.parsePacket();
   if(cb == 0) {
-    Serial.println("No packet received.");
     timeToTry--;
     if(timeToTry > 0){
       return;
@@ -765,12 +837,12 @@ void getClock(){
 //Parse unix epoch time to soft rtc and logs it out
 void parseClock(unsigned long epoch){
   DateTime time = DateTime(epoch);
-  time = time + TimeSpan(0, gmtOffset, 0,0);
-  /*if(gmtOffset > 0){
-    time = time + TimeSpan(0, gmtOffset, 0,0);
+  //time = time + TimeSpan(0, gmtOffset, 0,0)
+  if(gmtOffset > 0){
+    time = time + TimeSpan(0, gmtOffset / 60, gmtOffset % 60,0);
   }else if(gmtOffset < 0){
-    time = time + TimeSpan(0, -gmtOffset, 0,0);
-  }*/
+    time = time - TimeSpan(0, gmtOffset / 60, gmtOffset % 60,0);
+  }
 
   Serial.print("The GMT time is ");
   Serial.print(time.hour());
