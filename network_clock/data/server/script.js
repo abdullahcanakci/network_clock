@@ -10,6 +10,7 @@ var brightnessSlider = document.getElementById("brightness");
 var networkName = document.getElementById("ssid");
 var networkPass = document.getElementById("ssid_password");
 var deviceName = document.getElementById("station_name");
+var loginName = document.getElementById("login_name");
 var devicePassword = document.getElementById("station_password");
 var timezone = document.getElementById("set_timezone");
 
@@ -65,6 +66,7 @@ function fillpage(jsonResponse){
     timezone.value = deviceState.timezone;
     brightnessSlider.value = deviceState.bright;
     deviceName.value = deviceState.dname;
+    loginName.value = deviceState.lname;
     devicePassword.value = deviceState.dpass;
 }
 
@@ -106,7 +108,11 @@ function saveNetworkInfo(){
         ssid : networkName.value,
         psk : networkPass.value
     }));
-    loadPage();
+    xhr.onreadystatechange=function() {
+        if (xhr.readyState == 4) {
+            loadPage();
+        }
+    }
 }
 
 function saveDeviceInfo(){
@@ -116,6 +122,7 @@ function saveDeviceInfo(){
     xhr.send(JSON.stringify({
         type : 2,
         dname : deviceName.value,
+        lname : loginName.value,
         dpass : devicePassword.value,
         bright : brightnessSlider.value,
         timezone : timezone.value

@@ -97,7 +97,6 @@ WiFiUDP udp;
 
 // ------------ FILESYSTEM ----------
 
-
 ESP8266WebServer server(80);
 
 // ------------ OBJECTS ------------
@@ -131,6 +130,7 @@ typedef struct Device_Info_t {
   char ssid[32];
   char psk[64];
   char name[12];
+  char loginName[12];
   char password[12];
   uint8_t brightness;
   int16_t timeOffset;
@@ -141,7 +141,6 @@ Device_Info_t deviceInfo;
 // ------------ VARIABLES ------------
 //NETWORK
 bool packetSent = false;
-int gmtOffset = 180;
 int timeToTry = 10; //Times to read UDP packet before sending another one
 
 uint8_t displayBuffer[4] = {B01001110, B00011101, B00010101, B00010101};
@@ -207,6 +206,16 @@ void initFileSystem(){
     Serial.print("FS File: ");
     Serial.println(fileName);
   }
+
+
+  File file = SPIFFS.open("/creds.txt", "r");
+  char  buf[64];
+  while(file.available()){
+    int l = file.readBytesUntil('\n', buf, 64);
+    buf[l] = 0;
+    Serial.println(buf);
+  }
+  file.close();
   SPIFFS.end();
 }
 
@@ -234,12 +243,21 @@ void initNetwork(){
 
   if(niStored){
     //There is a network conn avaible in EEPROM
+    String c = deviceInfo.ssid;
+    Serial.print("ssid: ");
+    Serial.println(c);
+    Serial.println(c.length());
+    for(int i = 0; i < c.length(); i++){
+      Serial.println(c.charAt(i), BIN);
+    }
+
+
     Serial.print("Connecting to ");
     Serial.print(deviceInfo.ssid);
-    Serial.println("&&");
+    Serial.println("");
   
     Serial.print(deviceInfo.psk);
-    Serial.println("&&");
+    Serial.println("");
     WiFi.begin(deviceInfo.ssid, deviceInfo.psk);
     while(WiFi.status() != WL_CONNECTED){
       delay(500);
@@ -492,8 +510,9 @@ bool loadCredentials(){
   char buffer[64];
   int index = 0;
   while (credFile.available()) {
-    int l = credFile.readBytesUntil('\n', buffer, sizeof(buffer));
-    buffer[l] = 0;
+    int l = credFile.readBytesUntil(',', buffer, sizeof(buffer));
+    buffer[l] = '\0';
+
     switch (index)
     {
     case 0:{
@@ -512,10 +531,16 @@ bool loadCredentials(){
     }
     case 3:
     {
-      memcpy(deviceInfo.password, buffer, l);
+      memcpy(deviceInfo.loginName, buffer, l);
+      break;
       break;
     }
     case 4:
+    {
+      memcpy(deviceInfo.password, buffer, l);
+      break;
+    }
+    case 5:
     {
       String s = buffer;
       uint8_t b = s.toInt();
@@ -523,7 +548,7 @@ bool loadCredentials(){
       deviceInfo.brightness = b;
       break;
     }
-    case 5:
+    case 6:
     {
       String s = buffer;
       uint16_t b = s.toInt();
@@ -544,12 +569,20 @@ void saveCredentials(){
   SPIFFS.begin();
   File creds = SPIFFS.open("/creds.txt", "w");
 
-  creds.println(deviceInfo.ssid);
-  creds.println(deviceInfo.psk);
-  creds.println(deviceInfo.name);
-  creds.println(deviceInfo.password);
-  creds.println(deviceInfo.brightness);
-  creds.println(deviceInfo.timeOffset);
+  creds.print(deviceInfo.ssid);
+  creds.print(',');
+  creds.print(deviceInfo.psk);
+  creds.print(',');
+  creds.print(deviceInfo.name);
+  creds.print(',');
+  creds.print(deviceInfo.loginName);
+  creds.print(',');
+  creds.print(deviceInfo.password);
+  creds.print(',');
+  creds.print(deviceInfo.brightness);
+  creds.print(',');
+  creds.print(deviceInfo.timeOffset);
+  creds.print(',');
 
   creds.close();
   SPIFFS.end();
@@ -630,6 +663,7 @@ void buildJsonAnswer(char *output){
   root["psk"] = deviceInfo.psk; //64 Byte + 4 byte
 
   root["dname"] = deviceInfo.name; //20Byte
+  root["lname"] = deviceInfo.loginName;
   root["dpass"] = deviceInfo.password; //20byte
   root["bright"] = deviceInfo.brightness; //byte
 
@@ -700,8 +734,6 @@ void handleApiInput(){
   JsonObject& root = newBuffer.parseObject(server.arg("plain"));
   Serial.println(server.arg("plain"));
 
-  bool reboot = false;
-
   if(!root.success()){
     Serial.println("parseObject() failed");
     return;
@@ -735,10 +767,8 @@ void handleApiInput(){
     Serial.println(psk);
     if(!(WiFi.SSID().equals(deviceInfo.ssid)) || (!WiFi.psk().equals(deviceInfo.psk))){
       //We have updated credentials. Update them
-      network_info ni;
       memcpy(deviceInfo.ssid, ssid, SSID_SIZE);
       memcpy(deviceInfo.psk, psk, PASSWORD_SIZE);
-      reboot = true;
     }
     break;
   }
@@ -746,16 +776,23 @@ void handleApiInput(){
   {
 
     const char *deviceName = root["dname"];
+    const char *loginName = root["lname"];
     const char *devicePass = root["dpass"];
 
     int16_t timezone = root["timezone"];
     uint8_t brightness = root["bright"];
 
     memcpy(deviceInfo.name, deviceName, DEVICE_NAME_SIZE);
+    memcpy(deviceInfo.loginName, loginName, 12);
     memcpy(deviceInfo.password, devicePass, DEVICE_PASS_SIZE);
     deviceInfo.brightness = brightness;
-    deviceInfo.timeOffset = timezone;
-    reboot = true;
+    if(deviceInfo.timeOffset != timezone){
+      DateTime now = milliClock.now();
+      uint32_t epoch = now.unixtime();
+      epoch -= deviceInfo.timeOffset * 60;
+      deviceInfo.timeOffset = timezone;
+      parseClock(epoch);
+    }
     break;
   }
   case 3:
@@ -837,11 +874,10 @@ void getClock(){
 //Parse unix epoch time to soft rtc and logs it out
 void parseClock(unsigned long epoch){
   DateTime time = DateTime(epoch);
-  //time = time + TimeSpan(0, gmtOffset, 0,0)
-  if(gmtOffset > 0){
-    time = time + TimeSpan(0, gmtOffset / 60, gmtOffset % 60,0);
-  }else if(gmtOffset < 0){
-    time = time - TimeSpan(0, gmtOffset / 60, gmtOffset % 60,0);
+  if(deviceInfo.timeOffset > 0){
+    time = time + TimeSpan(0, deviceInfo.timeOffset / 60, deviceInfo.timeOffset % 60,0);
+  }else if(deviceInfo.timeOffset < 0){
+    time = time - TimeSpan(0, (-deviceInfo.timeOffset) / 60, (-deviceInfo.timeOffset) % 60,0);
   }
 
   Serial.print("The GMT time is ");

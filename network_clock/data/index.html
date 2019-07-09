@@ -3,20 +3,20 @@
   <head>
     <meta charset="utf-8">
     <title>Network Clock</title>
-    <link rel="stylesheet" href="main.css">
+    <link rel="stylesheet" href="/server/main.css">
   </head>
   <body onload="onPageLoad()">
     <nav>
         <ul>
-            <li onclick="go('home_div')"><img src="home.svg" alt="Home"/></li>
-            <li onclick="go('settings_div')"><img src="settings.svg" alt="Settings"/></li>
-            <li onclick="go('info_div')"><img src="info.svg" alt="info"/></li>
+            <li onclick="go('home_div')"><img src="/server/home.svg" alt="Home"/></li>
+            <li onclick="go('settings_div')"><img src="/server/settings.svg" alt="Settings"/></li>
+            <li onclick="go('info_div')"><img src="/server/info.svg" alt="info"/></li>
         </ul>
     </nav>
 
     <div id="container">
         <div id="home_div" class="visible">
-            <p id="clock">17:04:12</p>
+            <p id="clock">__:__:__</p>
             <p class=item>Timezone: UTC<span id="timezone">+3</span></p>
             <p class="item">Connected to: <span id="connection"></span></p>
         </div>
@@ -49,6 +49,10 @@
                         <label for="station_name">Station Name:</label>
                         <input type="text" id="station_name">
                     </div>
+                    <div> 
+                        <label for="login_name">Login:</label>
+                        <input type="text" id="login_name">
+                    </div>
                     <div>
                         <label for="station_password">Station Pass:</label>
                         <input type="text" id="station_password">
@@ -77,6 +81,6 @@
             </div>
         </div>
     </div>
-    <script src="script.js"></script>
+    <script src="/server/script.js"></script>
   </body>
 </html>
