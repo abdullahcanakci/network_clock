@@ -15,7 +15,17 @@
     </nav>
 
     <div id="container">
-        <div id="home_div" class="visible">
+        <div id="login_div" class="invisible">
+            
+            <form action="">
+                <input type="text" id="login_id" placeholder="User name?">
+                <input type="password" id="login_password" placeholder="Password?">
+                <button type="button" onclick="login()">Login</button>
+            </form>
+
+            
+        </div>
+        <div id="home_div" class="invisible">
             <p id="clock">__:__:__</p>
             <p class=item>Timezone: UTC<span id="timezone">+3</span></p>
             <p class="item">Connected to: <span id="connection"></span></p>

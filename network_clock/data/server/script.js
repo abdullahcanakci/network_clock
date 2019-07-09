@@ -2,8 +2,9 @@
 var screenSettings = document.getElementById("settings_div");
 var screenInfo = document.getElementById("info_div");
 var screenHome = document.getElementById("home_div");
+var screenLogin = document.getElementById("login_div");
 
-var screens = [screenHome, screenSettings, screenInfo];
+var screens = [screenHome, screenSettings, screenInfo, screenLogin];
 
 var brightnessSlider = document.getElementById("brightness");
 
@@ -27,28 +28,42 @@ window.setInterval(function(){
 }, 1000);
 
 function go(id){
+
     screens.forEach(element => {
-        element.classList.remove("invisible");
+        element.classList.add("invisible");
         element.classList.remove("visible");
     });
 
-    if(id == "home_div"){
-        screenSettings.classList.add("invisible");
-        screenInfo.classList.add("invisible");
-    }
-    else if(id == "settings_div"){
-        screenInfo.classList.add("invisible");
-        screenHome.classList.add("invisible");
-    }
-    else if(id == "info_div"){
-        screenSettings.classList.add("invisible");
-        screenHome.classList.add("invisible");
-    }
+    document.getElementById(id).classList.remove("invisible");
     document.getElementById(id).classList.add("visible");
 }
 
 function onPageLoad(){
     loadPage();
+}
+
+function login(){
+    var id = document.getElementById("login_id").value;
+    var pass = document.getElementById("login_password").value;
+
+    var payload = JSON.stringify({
+        USERNAME: id,
+        PASSWORD: pass
+    });
+
+    fetch('/login', {
+        method: 'post',
+        headers: {
+            'Accept': 'application/json, text/plain, */*',
+            'Content-Type': 'application/json'
+        },
+        body: payload
+    }).then(function(){
+        loadPage();
+        go("home_div");
+    });
+
+    
 }
 
 function loadPage(){
@@ -63,6 +78,14 @@ function loadPage(){
 function fillpage(jsonResponse){
     console.log(jsonResponse);
     deviceState = JSON.parse(jsonResponse);
+
+    if(!deviceState.auth){
+        go("login_div");
+        return;
+    }else {
+        go("home_div");
+    }
+
     var tz = deviceState.timezone / 60.0;
 
     curTime = deviceState.time;
@@ -150,5 +173,5 @@ function sendJSON(payload, reload) {
             'Content-Type': 'application/json'
         },
         body: payload
-    }).then(reload ? loadPage(): nul);
+    }).then(reload ? loadPage(): null);
 }

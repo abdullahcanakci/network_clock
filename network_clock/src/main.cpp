@@ -26,8 +26,10 @@ bool loadCredentials();
 void onIndex();
 void handleApiExchange();
 void handleApiInput();
+void handleLogin();
 void handleNotFound();
 bool handleFileRead(String path);
+bool isAuthenticated();
 
 // -------- DISPLAY
 void updateDisplayBuffer();
@@ -206,16 +208,6 @@ void initFileSystem(){
     Serial.print("FS File: ");
     Serial.println(fileName);
   }
-
-
-  File file = SPIFFS.open("/creds.txt", "r");
-  char  buf[64];
-  while(file.available()){
-    int l = file.readBytesUntil('\n', buf, 64);
-    buf[l] = 0;
-    Serial.println(buf);
-  }
-  file.close();
   SPIFFS.end();
 }
 
@@ -223,7 +215,15 @@ void initServer(){
   server.on("/", HTTP_POST, handleApiInput);
   server.on("/api", HTTP_GET, handleApiExchange);
   server.on("/api", HTTP_POST, handleApiInput);
+  server.on("/login", HTTP_POST, handleLogin);
   server.onNotFound(handleNotFound);
+
+
+  const char * headerKeys[] = {"User-Agent", "Cookie"};
+  size_t headerKeysSize = sizeof(headerKeys) / sizeof(char*);
+
+  server.collectHeaders(headerKeys, headerKeysSize);
+
   server.begin();
 
   MDNS.begin("clock");
@@ -243,14 +243,6 @@ void initNetwork(){
 
   if(niStored){
     //There is a network conn avaible in EEPROM
-    String c = deviceInfo.ssid;
-    Serial.print("ssid: ");
-    Serial.println(c);
-    Serial.println(c.length());
-    for(int i = 0; i < c.length(); i++){
-      Serial.println(c.charAt(i), BIN);
-    }
-
 
     Serial.print("Connecting to ");
     Serial.print(deviceInfo.ssid);
@@ -656,19 +648,22 @@ void buildJsonAnswer(char *output){
   StaticJsonBuffer<400> buffer;
   JsonObject& root = buffer.createObject();
 
-  struct station_config conf;
-  wifi_station_get_config(&conf);
+  bool auth = isAuthenticated();
+  if(!auth){
+    root["auth"] = false;
+  } else {
+    root["auth"] = true;
+    root["ssid"] = deviceInfo.ssid; //32 Byte + 4 byte
+    root["psk"] = deviceInfo.psk; //64 Byte + 4 byte
 
-  root["ssid"] = deviceInfo.ssid; //32 Byte + 4 byte
-  root["psk"] = deviceInfo.psk; //64 Byte + 4 byte
+    root["dname"] = deviceInfo.name; //20Byte
+    root["lname"] = deviceInfo.loginName;
+    root["dpass"] = deviceInfo.password; //20byte
+    root["bright"] = deviceInfo.brightness; //byte
 
-  root["dname"] = deviceInfo.name; //20Byte
-  root["lname"] = deviceInfo.loginName;
-  root["dpass"] = deviceInfo.password; //20byte
-  root["bright"] = deviceInfo.brightness; //byte
-
-  root["time"] = milliClock.now().unixtime();
-  root["timezone"] = deviceInfo.timeOffset;
+    root["time"] = milliClock.now().unixtime();
+    root["timezone"] = deviceInfo.timeOffset;
+  }
   root.printTo(output, 400);
 }
 
@@ -804,6 +799,53 @@ void handleApiInput(){
   server.send ( 200, "text/json", "{success:true}" );
   saveCredentials();
   delay(1000);
+}
+
+bool isAuthenticated() {
+  Serial.println("Enter isAuthenticated");
+  if (server.hasHeader("Cookie")) {
+    Serial.print("Found cookie: ");
+    String cookie = server.header("Cookie");
+    Serial.println(cookie);
+    if (cookie.indexOf("ESPSESSIONID=1") != -1) {
+      Serial.println("Authentication Successful");
+      return true;
+    }
+  }
+  Serial.println("Authentication Failed");
+  return false;
+}
+
+
+void handleLogin(){
+  if(server.hasHeader("Cookie")){
+    Serial.println("Found cookie:");
+    Serial.println(server.header("Cookie"));
+  }
+  StaticJsonBuffer<100> newBuffer;
+  JsonObject& root = newBuffer.parseObject(server.arg("plain"));
+  Serial.println(server.arg("plain"));
+  bool dc = false;
+  dc = root["DISCONNECTED"];
+
+  if(dc){
+    server.sendHeader("Cache-Control", "no-cache");
+    server.sendHeader("Set-Cookie", "ESPSESSIONID=0");
+    server.send(301);
+    return;
+  }
+  String id = root["USERNAME"];
+  String pw = root["PASSWORD"];
+
+  if(id != NULL && pw != NULL){
+    if(id.equals(deviceInfo.loginName) && pw.equals(deviceInfo.password)){
+      server.sendHeader("Cache-Control", "no-cache");
+      server.sendHeader("Set-Cookie", "ESPSESSIONID=1");
+      server.send(301);
+    }
+  }
+  id.~String();
+  pw.~String();
 }
 
 // This methods will be called intervals to get clock from network and update local one.
