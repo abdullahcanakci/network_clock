@@ -17,6 +17,14 @@ var timezone = document.getElementById("set_timezone");
 brightnessSlider.addEventListener("change", updateBrightness);
 
 var deviceState;
+var curTime;
+window.setInterval(function(){
+    if(curTime == null){
+        return;
+    }
+    curTime = curTime + 1;
+    parseTime(curTime);
+}, 1000);
 
 function go(id){
     screens.forEach(element => {
@@ -57,7 +65,7 @@ function fillpage(jsonResponse){
     deviceState = JSON.parse(jsonResponse);
     var tz = deviceState.timezone / 60.0;
 
-    parseTime(deviceState.time);
+    curTime = deviceState.time;
 
     document.getElementById("timezone").innerHTML = "+" + tz;
     document.getElementById("connection").innerHTML = deviceState.ssid;
@@ -91,43 +99,38 @@ function padZero(num){
 }
 
 function updateBrightness(){
-    console.log(brightnessSlider.value);
-    console.log(JSON.stringify({bright: brightnessSlider.value}));
-    var xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api", true);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.send(JSON.stringify({type : 0, bright: brightnessSlider.value}));
+    sendJSON(
+        JSON.stringify({
+            type : 0,
+            bright: brightnessSlider.value
+        }),
+        true
+    );
 }
 
 function saveNetworkInfo(){
-    var xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api", true);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.send(JSON.stringify({
-        type : 1,
-        ssid : networkName.value,
-        psk : networkPass.value
-    }));
-    xhr.onreadystatechange=function() {
-        if (xhr.readyState == 4) {
-            loadPage();
-        }
-    }
+    sendJSON(
+        JSON.stringify({
+            type : 1,
+            ssid : networkName.value,
+            psk : networkPass.value
+        }),
+        true
+    );
 }
 
 function saveDeviceInfo(){
-    var xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api", true);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.send(JSON.stringify({
+    sendJSON(JSON.stringify({
         type : 2,
         dname : deviceName.value,
         lname : loginName.value,
         dpass : devicePassword.value,
         bright : brightnessSlider.value,
         timezone : timezone.value
-    }));
-    loadPage();
+        }),
+        true
+    );
+    
 }
 
 function saveServerInfo(){
@@ -137,5 +140,21 @@ function saveServerInfo(){
     xhr.send(JSON.stringify({
         type : 3
     }));
-    loadPage();
+    sendJSON(
+        JSON.stringify({
+            type : 3
+        }),
+        true
+    );
+}
+
+function sendJSON(payload, reload) {
+    fetch('/api', {
+        method: 'post',
+        headers: {
+            'Accept': 'application/json, text/plain, */*',
+            'Content-Type': 'application/json'
+        },
+        body: payload
+    }).then(reload ? loadPage(): nul);
 }
