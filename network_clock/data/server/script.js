@@ -134,12 +134,6 @@ function saveDeviceInfo(){
 }
 
 function saveServerInfo(){
-    var xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api", true);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.send(JSON.stringify({
-        type : 3
-    }));
     sendJSON(
         JSON.stringify({
             type : 3
