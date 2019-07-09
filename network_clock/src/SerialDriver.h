@@ -9,6 +9,7 @@ public:
     SerialDriver(uint8_t dataPin, uint8_t clockPin, uint8_t latchPin);
     void DisplaySetup();
     void WriteDigit(uint8_t data, uint8_t digit);
+    void setBrightness(uint8_t brightness);
 
 
 private:

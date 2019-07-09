@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Network Clock</title>
+    <link rel="stylesheet" href="/server/main.css">
+  </head>
+  <body onload="onPageLoad()">
+    <nav>
+        <ul>
+            <li onclick="go('home_div')"><img src="/server/home.svg" alt="Home"/></li>
+            <li onclick="go('settings_div')"><img src="/server/settings.svg" alt="Settings"/></li>
+            <li onclick="go('info_div')"><img src="/server/info.svg" alt="info"/></li>
+        </ul>
+    </nav>
+
+    <div id="container">
+        <div id="login_div" class="invisible">
+            
+            <form action="">
+                <input type="text" id="login_id" placeholder="User name?">
+                <input type="password" id="login_password" placeholder="Password?">
+                <button type="button" onclick="login()">Login</button>
+            </form>
+
+            
+        </div>
+        <div id="home_div" class="invisible">
+            <p id="clock">__:__:__</p>
+            <p class=item>Timezone: UTC<span id="timezone">+3</span></p>
+            <p class="item">Connected to: <span id="connection"></span></p>
+        </div>
+        <div id="settings_div" class="invisible">
+            <form action="">
+                    <h4>Network</h4>
+                    <fieldset>
+                    <div>
+                        <label for="ssid">Network Name:</label>
+                        <input type="text" id="ssid">
+                    </div>
+                    <div>
+                        <label for="ssid_pasword">Network Pass:</label>
+                        <input type="text" id="ssid_password">
+                    </div>
+                    <button type="button" onclick="saveNetworkInfo()">Save</button>
+                    </fieldset>
+                    
+                    <h4>Device</h4>
+                    <fieldset>
+                    <div>
+                        <label for="set_timezone">Timezone(Minute):</label>
+                        <input type="number" id="set_timezone">
+                    </div>                      
+                    <div>
+                        <label for="brightness">Brightness:</label>
+                        <input type="range" id=brightness min="0" max="15" step="1">
+                    </div>
+                    <div>
+                        <label for="station_name">Station Name:</label>
+                        <input type="text" id="station_name">
+                    </div>
+                    <div> 
+                        <label for="login_name">Login:</label>
+                        <input type="text" id="login_name">
+                    </div>
+                    <div>
+                        <label for="station_password">Station Pass:</label>
+                        <input type="text" id="station_password">
+                    </div>
+                    <button type="button" onclick="saveDeviceInfo()">Save</button>
+                    </fieldset>
+                    <h4>Server</h4>
+                    <fieldset>
+                        <button type="button" onclick="saveServerInfo()">Save</button>
+                    </fieldset>
+                    
+            </form>
+        </div>
+        <div id="info_div" class="invisible">
+            <div id="About">
+                <h4>About</h4>
+                <ul>
+                    <li>A thing</li>
+                    <li>Another thing</li>
+                </ul>
+                <h4>Licenses</h4>
+                <ul>
+                    <li>A License</li>
+                    <li>Another License</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <script src="/server/script.js"></script>
+  </body>
+</html>

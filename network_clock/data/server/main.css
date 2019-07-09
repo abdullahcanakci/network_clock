@@ -1,0 +1,118 @@
+* {
+    box-sizing: content-box;
+}
+html {
+    min-height: 100%;
+}
+
+body {
+    min-width: 480px;
+    width: 50%;
+    height: 100%;
+    margin: 0 auto;
+}
+
+form div{ 
+    padding: 16px 0px;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-around;
+}
+
+form div label{
+    width: 140px;
+    margin-top: auto;
+    margin-bottom: auto;
+}
+form div input{
+    width: auto;
+
+}
+
+#container{
+    padding: 0 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.visible {
+    display: block;
+}
+
+.invisible {
+    display: none;
+}
+
+.item{
+    text-align: center;
+    font-size: 1.0rem;
+}
+.small {
+    font-size: 0.75rem;
+}
+
+#clock {
+    text-align: center;
+    font-size: 3rem;
+}
+
+#timezone {
+    text-align: center;
+}
+
+
+nav {
+    height: 10%;
+    width: 100%;
+    position: static;
+    border-bottom: 3px solid cornflowerblue;
+    border-top-width: 0;
+}
+nav ul {
+
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-content: space-evenly;
+    padding: 8px 16px;
+    margin: 0;
+}
+
+nav ul li {
+    list-style-type: none;
+    display: inline-flex;
+    padding: 1em 2em;
+}
+
+form h4 {
+    padding-left: 32px;
+}
+
+form button {
+    align-self: flex-end;
+}
+
+@media only screen and (max-width: 800px) {
+    body {
+      width: 80%;
+    }
+  }
+
+@media only screen and (orientation: portrait) {
+    body {
+      width: 100%;
+      margin-bottom: 15%;
+    }
+
+    nav {
+        position: fixed;
+        width: 100%;
+        height: 10%;
+        border-top: 3px solid cornflowerblue;
+        border-bottom-width: 0;
+        background-color: white;
+        bottom: 0;
+    }
+}
+
