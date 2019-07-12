@@ -24,9 +24,21 @@ void setup() {
 
   //Get Network Clock
   updateClock();
-  activateTickerInts();
-  updateTimeTimer.attach(60*60, setUpdateClockFlag);
+  
+  struct Node* temp = addInterrupt(updateDisplay);
+  temp->time = milliClock.now().unixtime() + 5;
+  temp->tag= (char *) "Disp update";
 
+  struct Node* temp1 = addInterrupt(updateDisplayBuffer);
+  temp1->time = milliClock.now().unixtime() + 5; 
+  temp1->tag = (char *) "Disp buffer";
+
+
+  struct Node *temp2 = addInterrupt(updateClock);
+  temp2->time = milliClock.now().unixtime() + 60*60*6; // 6 hour
+  temp2->tag = (char *) "Clk update";
+
+  interruptList->reset();
 }
 
 /*
@@ -106,59 +118,62 @@ void initNetwork(){
   Serial.println();
 }
 
+uint32_t prevSeconds = 0;
+bool isNetworkRequestActive = false;
+uint32_t networkMillis = 0;
+uint32_t buttonMillis = 0;
 void loop() {
   server.handleClient();
   MDNS.update();
 
-  if(flagDisplayBufferUpdate){
-    flagDisplayBufferUpdate = false;
-    updateDisplayBuffer();
+  uint32_t time = milliClock.now().unixtime();
+  interruptList->reset();
+  if(time - prevSeconds >= 1 && !packetSent){
+    prevSeconds = time;
+    while (interruptList->advance())
+    {
+      struct Node *temp = interruptList->getCurrent();
+      if (time >= temp->time)
+      {
+        uint32_t ans = temp->function();
+        if (ans == 0)
+        {
+          //We are calling remove interrupt which also uses advance and
+          //getCurrent functions. I relocate our pointer to previous one so our while
+          // will use advance to the right pointer
+          struct Node *t = temp->next;
+          removeInterrupt(temp);
+          interruptList->setIndex(t);
+        }
+        else
+        {
+          temp->time = ans;
+        }
+      } 
+    }
   }
-  if(flagDisplayUpdate){
-    flagDisplayUpdate = false;
-    updateDisplay();
+
+  if(packetSent){
+    if(millis() - networkMillis > 200){
+      getClock();
+      networkMillis = millis();
+    }
   }
-  if(flagNetworkRequest){
-    flagNetworkRequest = false;
-    getClock();
-  }
-  if(flagClockUpdate){
-    flagClockUpdate = false;
-    updateClock();
-  }
-  if(flagButtonRead){
+
+  if(millis() - buttonMillis >= 5){
     wpsButton.update();
     refreshButton.update();
     offsetButton.update();
     if(wpsButton.rose()){
-      flagWpsConnect = true;
+      getWPSConnection();
     }
     if(refreshButton.rose()){
-      flagClockRefresh = true;
+      updateClock();
     }
     if(offsetButton.rose()){
-      flagClockOffset = true;
+      //TODO set offset
     }
-  }
-
-  if(flagClockRefresh){
-    Serial.println("Clock refresh");
-    flagClockRefresh = false;
-    clockKeeper = clockRefreshRate;
-    flagClockUpdate = true;
-  }
-
-  if(flagWpsConnect){
-    Serial.println("Wps connect");
-    getWPSConnection();
-    clockKeeper = clockRefreshRate+1;
-    setUpdateClockFlag();
-    flagWpsConnect = false;
-  }
-
-  if(flagClockOffset){
-    Serial.println("Clock offset");
-    flagClockOffset = false;
+    buttonMillis = millis();
   }
 
   if(WiFi.isConnected()){
@@ -168,50 +183,49 @@ void loop() {
   }
 }
 
-void setDisplayBufferFlag(){
-  flagDisplayBufferUpdate = true;
+/*
+ * Adds and interrupt to the table.
+ */
+struct Node* addInterrupt(uint32_t (*function) (void)){
+  struct Node* newNode = (struct Node*)malloc(sizeof(struct Node));
+
+  newNode->function = function;
+  interruptList->reset();
+  if(interruptList->head ==nullptr){
+    //No interrupts registered
+    interruptList->head = newNode;
+    interruptList->tail = newNode;
+  } else {
+    interruptList->tail->next = newNode;
+    interruptList->tail = newNode;
+  }
+  return newNode;
 }
 
-void setDisplayUpdateFlag(){
-  flagDisplayUpdate = true;
-}
-
-void setUpdateClockFlag(){
-  flagClockUpdate = true;
-}
-
-void setNetworkRequestFlag(){ 
-  flagNetworkRequest = true; 
-}
-
-void setButtonReadFlag() {
-  flagButtonRead = true;
-}
-
-void setWPSFlag(){ 
-  flagWpsConnect = true; 
-}
-
-void setClockRefreshFlag(){ 
-  flagClockRefresh = true; 
-}
-
-// Activate Time based interrupts
-void activateTickerInts(){
-  //Timer to update display buffer
-  displayBufferUpdateTimer.attach(5, setDisplayBufferFlag);
-
-  displayUpdateTimer.attach(1, setDisplayUpdateFlag);
-
-  buttonUpdateTimer.attach_ms(5, setButtonReadFlag);
-}
-
-// As I know wifi creates problems when there are interrupts with downtime shorter than 2ms
-// We are disabling all short term interrupts so they won't bother network stack
-void deactivateTickerInts(){
-  displayBufferUpdateTimer.detach();
-  displayUpdateTimer.detach();
-  buttonUpdateTimer.detach();
+bool removeInterrupt(struct Node* n){
+  struct Node* prev = nullptr;
+  struct Node* temp = nullptr;
+  interruptList->reset();
+  while(interruptList->advance()){
+    temp = interruptList->getCurrent();
+    if(temp != n){
+      prev = temp;
+      temp = temp->next;
+    }
+    if(temp == interruptList->tail && n != interruptList->tail){
+      return false;
+      // We are at tail, and couldn't find provided node
+    }else {
+      interruptList->tail = prev;
+      //We remove tail.
+    }
+  }
+  if(prev != nullptr && temp != nullptr){
+    prev->next = temp->next;
+    return false;
+  }
+  free(n);
+  return true;
 }
 
 /*
@@ -333,6 +347,10 @@ void getWPSConnection(){
       timeToTry -= 1;
     }
 
+    if(WiFi.status() != WL_CONNECTED){
+      return;
+    }
+
     //Disable WPS LED
     digitalWrite(WPS_LED, LOW);
 
@@ -346,23 +364,26 @@ void getWPSConnection(){
     memcpy(deviceInfo.psk, conf.password, sizeof(conf.password));
 
     saveCredentials();
+    updateClock();
 }
 
 /*
  *  Updates display buffer with new time values
  */
-void updateDisplayBuffer(){
+uint32_t updateDisplayBuffer(){
   DateTime now = milliClock.now();
   displayBuffer[0] = numTable[now.hour() / 10];
   displayBuffer[1] = numTable[now.hour() % 10];
   displayBuffer[2] = numTable[now.minute() / 10];
   displayBuffer[3] = numTable[now.minute() % 10];
+
+  return milliClock.now().unixtime() + 5;
 }
 
 /*
 * Passes display buffer values into the drivers registers.
 */
-void updateDisplay(){
+uint32_t updateDisplay(){
   for(int i = 0; i < 4; i++){
     if((i == 1 || i == 2) && dotStatus){
         sc.WriteDigit(displayBuffer[i] | B10000000, i);
@@ -372,6 +393,7 @@ void updateDisplay(){
     }
   }
   dotStatus = !dotStatus;
+  return milliClock.now().unixtime() + 1;
 }
 
 /*
@@ -423,7 +445,6 @@ void buildJsonAnswer(char *output){
  * Blocks access to "/creds.txt"
  */
 bool handleFileRead(String path){
-  //deactivateTickerInts();
   SPIFFS.begin();
   Serial.println("Handle file read");
   if(path.endsWith("/")){
@@ -446,10 +467,8 @@ bool handleFileRead(String path){
     file.close();
     Serial.println("File closed.");
 
-    //activateTickerInts();
     return true;
   }
-  //activateTickerInts();
   SPIFFS.end();
   return false;
 }
@@ -603,15 +622,11 @@ void handleLogin(){
 }
 
 // This methods will be called intervals to get clock from network and update local one.
-void updateClock() {
-  if(clockKeeper < clockRefreshRate){
-    return;
-  }
-  clockKeeper = 0;
-
+uint32_t updateClock() {
   //deactivate Interrupts so the WiFi can work on it's own.
-  deactivateTickerInts();
-  networkRequestTimer.attach(0.1, setNetworkRequestFlag);
+
+  getClock();
+  return (milliClock.now() + TimeSpan(0,6,0,0)).unixtime();
 }
 
 //Gets clock from network source and provides soft rtc with the results.
@@ -635,7 +650,6 @@ void getClock(){
     }
   } else {
     
-    networkRequestTimer.detach();
     timeToTry = 10;
     packetSent=false;
     Serial.print("Packet received, length=");
@@ -662,8 +676,8 @@ void getClock(){
 
     parseClock(epoch);
     updateDisplayBuffer();
-    activateTickerInts();
   }
+  return 60*60*6;
 
 }
 
