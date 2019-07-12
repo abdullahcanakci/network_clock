@@ -1,9 +1,10 @@
 /* GENERAL */
 
 * {
-    box-sizing: content-box;
+    box-sizing: border-box;
 }
 html {
+    height: 100vh;
 }
 
 body {
