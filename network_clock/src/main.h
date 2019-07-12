@@ -4,7 +4,6 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <SerialDriver.h>
-#include <Ticker.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>  
@@ -50,17 +49,20 @@ void handleNotFound();
 bool handleFileRead(String path);
 
 // -------- DISPLAY
-void updateDisplayBuffer();
-void updateDisplay();
+uint32_t updateDisplayBuffer();
+uint32_t updateDisplay();
 
 // -------- CLOCK
 void getClock();
 void parseClock(unsigned long epoch);
-void updateClock();
+uint32_t updateClock();
 
 // -------- INTERRUPTS
 void activateTickerInts();
 void deactivateTickerInts();
+
+struct Node* addInterrupt(uint32_t (*function)(void));
+bool removeInterrupt(struct Node* n);
 
 // -------- FLAGS
 void setDisplayBufferFlag();
@@ -117,17 +119,6 @@ Bounce wpsButton = Bounce();
 Bounce refreshButton = Bounce();
 Bounce offsetButton = Bounce();
 
-// TIMERS -------------
-
-Ticker displayBufferUpdateTimer;
-Ticker displayUpdateTimer;
-Ticker networkRequestTimer;
-Ticker updateTimeTimer;
-Ticker buttonUpdateTimer;
-//Clock refresh rate in hours
-uint8_t clockRefreshRate = 6;
-uint8_t clockKeeper = 6;
-
 // ------------ STRUCTS --------------
 
 typedef struct Device_Info_t {
@@ -140,19 +131,57 @@ typedef struct Device_Info_t {
   int16_t timeOffset;
 }Device_Info;
 
+typedef struct Node {
+  char *tag;
+  uint32_t time;
+  uint32_t (*function)(void);
+  bool isActive = true;
+  struct Node *next = nullptr;
+}Node;
+
+struct List {
+  struct Node *head = nullptr;
+  struct Node *tail = nullptr;
+  uint8_t length = 0;
+  struct Node *index = nullptr;
+
+  void reset(){
+    index = nullptr;
+  }
+
+  struct Node* getCurrent(){
+    return index;
+  }
+  void setIndex(struct Node* n){
+    struct Node* temp = head;
+    while(temp->next != nullptr){
+      temp = temp->next;
+    }
+    index = temp;
+  }
+  
+  bool advance(){
+    if(index == nullptr){
+      if(head == nullptr){
+        return false;
+      }
+      index = head;
+      return true;
+    }
+    if(index == tail){
+      index = nullptr;
+      return false;
+    }
+    if(index->next != nullptr){
+      index = index->next;
+      return true;
+    }
+    return true;
+  }
+};
+
 Device_Info_t deviceInfo;
-
-
-// ------------ FLAGS -----------
-bool flagDisplayBufferUpdate;
-bool flagDisplayUpdate;
-bool flagNetworkRequest;
-bool flagClockUpdate;
-bool flagWpsConnect;
-bool flagClockRefresh;
-bool flagButtonRead;
-bool flagClockOffset;
-
+struct List *interruptList = (struct List*)malloc(sizeof(struct List));
 
 // ------------ NUM REF TABLE ---------------
 uint8_t numTable[] = {
