@@ -25,7 +25,7 @@
 
 #define WPS_BUTTON_PIN 4
 #define REFRESH_BUTTON_PIN 5
-#define OFFSET_BUTTON_PIN 16
+#define FUNCTION_BUTTON_PIN 16
 
 #define WPS_LED 16 //D3
 #define CONN_LED 2 //D4
@@ -33,6 +33,7 @@
 
 
 // -------- NETWORK
+void createAccessPoint();
 void getNetworkConnection();
 void sendNTPpacket(IPAddress& address);
 void getUDPPacket();
@@ -74,7 +75,7 @@ void setWPSFlag();
 void setClockRefreshFlag();
 
 // -------- VARIOUS
-bool loadCredentials();
+bool loadCredentials(bool reset = false);
 void saveCredentials();
 
 void initPeripherals();
@@ -119,7 +120,7 @@ SerialDriver sc(DATA_PIN, CLOCK_PIN, LATCH_PIN);
 RTC_Millis milliClock;
 Bounce wpsButton = Bounce();
 Bounce refreshButton = Bounce();
-Bounce offsetButton = Bounce();
+Bounce functionButton = Bounce();
 
 // ------------ STRUCTS --------------
 
@@ -197,5 +198,23 @@ uint8_t numTable[] = {
   B01111111,
   B01111011,
 };
+
+/*
+ * Check buttons and determines boot state
+ * 0 normal boot - load saved credentials and continue
+ * 1 WPS boot - activate WPS and try to connect if failed connect to last known network if avaible
+ * 2 AP boot - Creates an access point to connect and configure device.
+ * 3 Reset boot -Resets the credentials file
+ */
+uint8_t checkBootState(){
+  //bool refreshButton = digitalRead(REFRESH_BUTTON_PIN);
+
+  bool funcButton = functionButton.read();
+  bool wButton = wpsButton.read();
+
+  //We are using pull-ups on pins, they are always 1
+  return !funcButton << 1 | !wButton;
+}
+
 
 #endif

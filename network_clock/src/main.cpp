@@ -3,29 +3,67 @@
 void setup() {
   Serial.begin(115200);
   delay(500);
-  
-  //Load credentials from flash "/creds.txt" file
-  loadCredentials();
-  delay(500);
-
   //Init Peripherals. Buttons, displays etc
   initPeripherals();
 
-  //Init clock
-  milliClock.begin(DateTime(F(__DATE__), F(__TIME__)));
-  
-  //Init display
-  sc.DisplaySetup();
+
+  uint8_t bootState = checkBootState();
+  /*
+   * There are 3 boot states 
+   * 0 - Regular boot
+   *    Load credentials
+   *    if avaible connect last known network
+   * 
+   * 1 - WPS boot
+   *    Activate WPS
+   *    try to connect, if failed show error and wait for 
+   *    WPS button to pushed or rebooted
+   *   
+   * 2 - Access Point
+   *    WPS is insecure, you may not have it enabled or don't want to use it
+   *    This mode creates a access point to connect and configure it.
+   * 
+   * 3 - Reset
+   *    User might corrupt or forget credentials etc. 
+   *    This will reset credentials file with a master one.
+   */
+
+
+  /* We always have to load credentials. 
+   * It has device name etc. and in case of WPS we will write updated credentials. to the file
+   * if not loaded it will write empty.
+   */
+  //Load credentials from flash "/creds.txt" file
+  loadCredentials();
+  delay(500);
   sc.setBrightness(deviceInfo.brightness);
-  updateDisplay();
+  switch (bootState)
+  {
+  case 0:
+    initNetwork();
+    //Get Network Clock
+    milliClock.begin(DateTime(0));
+    initInterrupts();
+    break;
 
-  initNetwork();
+  case 1:
+    getWPSConnection();
+    if(WiFi.isConnected()){
+      ESP.restart();
+    }
+    break;
+
+  case 2:
+    WiFi.softAP(deviceInfo.name, NULL);
+    break;
+
+  case 3:
+    loadCredentials(true);
+    //This will cause credentials to be red from master file and saved into the regular file.
+    break;
+  }
+
   initServer();
-
-  //Get Network Clock
-  updateClock();
-  
-  initInterrupts();
 }
 
 /*
@@ -36,14 +74,21 @@ void initPeripherals(){
   wpsButton.interval(5);
   refreshButton.attach(REFRESH_BUTTON_PIN, INPUT_PULLUP);
   refreshButton.interval(5);
-  offsetButton.attach(OFFSET_BUTTON_PIN, INPUT_PULLUP);
-  offsetButton.interval(5);
+  functionButton.attach(FUNCTION_BUTTON_PIN, INPUT_PULLUP);
+  functionButton.interval(5);
 
   pinMode(WPS_LED, OUTPUT);
   digitalWrite(WPS_LED, LOW);
 
   pinMode(CONN_LED, OUTPUT);
   digitalWrite(CONN_LED, HIGH);
+
+  //Init display
+  sc.DisplaySetup();
+  sc.setBrightness(deviceInfo.brightness);
+  updateDisplay();
+
+  Serial.println("Peripherals initiated");
 }
 
 
@@ -80,6 +125,7 @@ void initNetwork(){
   WiFi.mode(WIFI_STA);
 
   if(niStored){
+    Serial.printf("Network name: %s, Network password: %s", deviceInfo.ssid, deviceInfo.psk);
     WiFi.begin(deviceInfo.ssid, deviceInfo.psk);
     while(WiFi.status() != WL_CONNECTED){
       delay(500);
@@ -90,8 +136,9 @@ void initNetwork(){
     getWPSConnection();
   }
 
-  Serial.println("");
-  Serial.println("Connection established");
+  if(WiFi.isConnected()){ 
+    Serial.println("Connection established");
+  }
 
   Serial.print("IP: ");
   Serial.println(WiFi.localIP());
@@ -104,11 +151,11 @@ void initNetwork(){
 
   Serial.println();
 }
-
 uint32_t prevSeconds = 0;
 bool isNetworkRequestActive = false;
 uint32_t networkMillis = 0;
 uint32_t buttonMillis = 0;
+
 void loop() {
   server.handleClient();
   MDNS.update();
@@ -121,7 +168,7 @@ void loop() {
     {
       struct Node *temp = interruptList->getCurrent();
       if (time >= temp->time)
-      {
+      { 
         uint32_t ans = temp->function();
         if (ans == 0)
         {
@@ -136,7 +183,7 @@ void loop() {
         {
           temp->time = ans;
         }
-      } 
+      }
     }
   }
 
@@ -145,19 +192,19 @@ void loop() {
       getClock();
       networkMillis = millis();
     }
-  }
+  } 
 
   if(millis() - buttonMillis >= 5){
     wpsButton.update();
     refreshButton.update();
-    offsetButton.update();
+    functionButton.update();
     if(wpsButton.rose()){
       getWPSConnection();
     }
     if(refreshButton.rose()){
       updateClock();
     }
-    if(offsetButton.rose()){
+    if(functionButton.rose()){
       //TODO set offset
     }
     buttonMillis = millis();
@@ -179,7 +226,7 @@ void initInterrupts(){
 
 
   struct Node *temp2 = addInterrupt(updateClock);
-  temp2->time = milliClock.now().unixtime() + 60*60*6; // 6 hour
+  temp2->time = milliClock.now().unixtime() + 5;
 
   interruptList->reset();
 }
@@ -232,11 +279,19 @@ bool removeInterrupt(struct Node* n){
 /*
  * Loads credentials from flash.
  */
-bool loadCredentials(){
+bool loadCredentials(bool reset){
   SPIFFS.begin();
-  File credFile = SPIFFS.open("/creds.txt", "r");
-  if(!credFile){
-    Serial.println("Credentials file can't be opened");
+  File credFile;
+  if(reset){
+    Serial.println("Reloading credentials.");
+    credFile = SPIFFS.open("/creds_master.txt", "r");
+  } else {
+    Serial.println("Reading credentials.");
+    credFile = SPIFFS.open("/creds.txt", "r");
+  }
+
+  if(credFile){
+    Serial.println("No file found");
   }
 
   char buffer[64];
@@ -244,7 +299,7 @@ bool loadCredentials(){
   while (credFile.available()) {
     int l = credFile.readBytesUntil(',', buffer, sizeof(buffer));
     buffer[l] = '\0';
-
+    Serial.println(buffer);
     switch (index)
     {
     case 0:{
@@ -294,6 +349,13 @@ bool loadCredentials(){
   }
   credFile.close();
   SPIFFS.end();
+  if(reset){
+    saveCredentials();
+    delay(500);
+    Serial.println("Credentials restore");
+    ESP.restart();
+  }
+  Serial.println("Credentials loaded");
   return true;
 }
 
@@ -322,9 +384,8 @@ void saveCredentials(){
   creds.close();
   SPIFFS.end();
 
-
-
   SPIFFS.end();
+  Serial.println("Credentials saved.");
 }
 
 /*
@@ -333,22 +394,34 @@ void saveCredentials(){
  */
 void getWPSConnection(){
     Serial.println("Waiting WPS connection");
+    displayBuffer[0] = B00111110;
+    displayBuffer[1] = B01100111;
+    displayBuffer[2] = B01011011;
+    displayBuffer[3] = B00000000;
 
     //Activate WPS LED
     digitalWrite(WPS_LED, HIGH);
-
-    int timeToTry  = 5;
-    while (timeToTry > 0){
+    WiFi.mode(WIFI_STA);
+    int timeToTry  = 1;
+    while (timeToTry < 6){
+      displayBuffer[3] = numTable[timeToTry];
+      updateDisplay();
       if(WiFi.beginWPSConfig()){
         Serial.println("WPS connection established.");
+        WiFi.printDiag(Serial);
         break;
       }
       Serial.print("WPS connection failed. Tryin again ...");
       Serial.println(timeToTry, DEC);
-      timeToTry -= 1;
+      timeToTry += 1;
     }
 
     if(WiFi.status() != WL_CONNECTED){
+      displayBuffer[0] = B01000111;
+      displayBuffer[1] = B01110111;
+      displayBuffer[2] = B00000110;
+      displayBuffer[3] = B00001110;
+      updateDisplay();
       return;
     }
 
@@ -373,6 +446,12 @@ void getWPSConnection(){
  */
 uint32_t updateDisplayBuffer(){
   DateTime now = milliClock.now();
+  if(deviceInfo.timeOffset > 0){
+    now = now + TimeSpan(0, deviceInfo.timeOffset / 60, deviceInfo.timeOffset % 60,0);
+  }else if(deviceInfo.timeOffset < 0){
+    now = now - TimeSpan(0, (-deviceInfo.timeOffset) / 60, (-deviceInfo.timeOffset) % 60,0);
+  }
+
   displayBuffer[0] = numTable[now.hour() / 10];
   displayBuffer[1] = numTable[now.hour() % 10];
   displayBuffer[2] = numTable[now.minute() / 10];
@@ -553,13 +632,8 @@ void handleApiInput(){
     memcpy(deviceInfo.loginName, loginName, 12);
     memcpy(deviceInfo.password, devicePass, DEVICE_PASS_SIZE);
     deviceInfo.brightness = brightness;
-    if(deviceInfo.timeOffset != timezone){
-      DateTime now = milliClock.now();
-      uint32_t epoch = now.unixtime();
-      epoch -= deviceInfo.timeOffset * 60;
-      deviceInfo.timeOffset = timezone;
-      parseClock(epoch);
-    }
+    deviceInfo.timeOffset = timezone;
+
     break;
   }
   case 3:
@@ -570,7 +644,6 @@ void handleApiInput(){
 
   server.send ( 200, "text/json", "{success:true}" );
   saveCredentials();
-  delay(1000);
 }
 
 bool isAuthenticated() {
@@ -643,11 +716,13 @@ void getClock(){
   int cb = udp.parsePacket();
   if(cb == 0) {
     timeToTry--;
+    Serial.print(".");
     if(timeToTry > 0){
       return;
     } else {
       packetSent = false;
       timeToTry = 10;
+      getClock();
     }
   } else {
     
@@ -683,11 +758,6 @@ void getClock(){
 //Parse unix epoch time to soft rtc and logs it out
 void parseClock(unsigned long epoch){
   DateTime time = DateTime(epoch);
-  if(deviceInfo.timeOffset > 0){
-    time = time + TimeSpan(0, deviceInfo.timeOffset / 60, deviceInfo.timeOffset % 60,0);
-  }else if(deviceInfo.timeOffset < 0){
-    time = time - TimeSpan(0, (-deviceInfo.timeOffset) / 60, (-deviceInfo.timeOffset) % 60,0);
-  }
 
   Serial.print("The GMT time is ");
   Serial.print(time.hour());
