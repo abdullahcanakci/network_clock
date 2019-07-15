@@ -61,6 +61,7 @@ uint32_t updateClock();
 void activateTickerInts();
 void deactivateTickerInts();
 
+
 struct Node* addInterrupt(uint32_t (*function)(void));
 bool removeInterrupt(struct Node* n);
 
@@ -79,6 +80,7 @@ void saveCredentials();
 void initPeripherals();
 void initNetwork();
 void initServer();
+void initInterrupts();
 
 
 /*
@@ -132,7 +134,6 @@ typedef struct Device_Info_t {
 }Device_Info;
 
 typedef struct Node {
-  char *tag;
   uint32_t time;
   uint32_t (*function)(void);
   bool isActive = true;

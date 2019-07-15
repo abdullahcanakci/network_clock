@@ -25,20 +25,7 @@ void setup() {
   //Get Network Clock
   updateClock();
   
-  struct Node* temp = addInterrupt(updateDisplay);
-  temp->time = milliClock.now().unixtime() + 5;
-  temp->tag= (char *) "Disp update";
-
-  struct Node* temp1 = addInterrupt(updateDisplayBuffer);
-  temp1->time = milliClock.now().unixtime() + 5; 
-  temp1->tag = (char *) "Disp buffer";
-
-
-  struct Node *temp2 = addInterrupt(updateClock);
-  temp2->time = milliClock.now().unixtime() + 60*60*6; // 6 hour
-  temp2->tag = (char *) "Clk update";
-
-  interruptList->reset();
+  initInterrupts();
 }
 
 /*
@@ -181,6 +168,20 @@ void loop() {
   }else{
     digitalWrite(CONN_LED, HIGH);
   }
+}
+
+void initInterrupts(){
+  struct Node* temp = addInterrupt(updateDisplay);
+  temp->time = milliClock.now().unixtime() + 5;
+
+  struct Node* temp1 = addInterrupt(updateDisplayBuffer);
+  temp1->time = milliClock.now().unixtime() + 5;
+
+
+  struct Node *temp2 = addInterrupt(updateClock);
+  temp2->time = milliClock.now().unixtime() + 60*60*6; // 6 hour
+
+  interruptList->reset();
 }
 
 /*
@@ -677,8 +678,6 @@ void getClock(){
     parseClock(epoch);
     updateDisplayBuffer();
   }
-  return 60*60*6;
-
 }
 
 //Parse unix epoch time to soft rtc and logs it out
