@@ -6,6 +6,18 @@ This is the second version of my clock with network time keeping with ESP12-E/F 
 
 ---
 
+Finally I have received the board. It worked great apart from micro usb port, which was pain to solder.
+
+![Back Empty](./physical_device/pictures/back_empty.jpg)
+
+![Back Populated](./physical_device/pictures/back_pop.jpg)
+
+![Front Empty](./physical_device/pictures/front_empty.jpg)
+
+![Front populated](./physical_device/pictures/front_pop.jpg)
+
+---
+
 #### Design Limits
 
 For this project I want to have a real PCB so I won't have to fiddle with protoboards and point-to-point soldering. Also replicating a device would be so easy with a PCB.
@@ -92,7 +104,7 @@ Changes made:
 - Larger ground planes on both sides and more stiching.
 - Thermal reliefs on all pads whether through hole or smt pad. It was hard to solder some pads on the prototype.
 - Removed one of the commons connection from displays to ease routing.
-- Larger board size. 42mm to 50mm.
+- Larger board size. 42mm to 60mm. With mounting holes
 - Prototype programming power source was 3V3 which wasn't enough for display driver. Changed to 5V.
 - Better routing of signal traces.
 - Wider trace width. 10 to 14 mil for regular, 15 to ~20mil for power traces.
